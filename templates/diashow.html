@@ -4,7 +4,7 @@
 
 <div class="page-header">
     <h1>Galerie</h1>
-    <span class="badge">{{ gesamt }} Medium{{ 'en' if gesamt != 1 }}</span>
+    <span class="badge">{{ gesamt }} {{ 'Medium' if gesamt == 1 else 'Medien' }}</span>
 </div>
 
 <section class="card">

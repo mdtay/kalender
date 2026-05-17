@@ -236,8 +236,8 @@ textarea { resize: vertical; }
     user-select: none;
 }
 .personen-chip input { display: none; }
-.personen-checkboxen-mini .personen-chip { padding: 2px; border-radius: 50%; gap: 0; }
-.bild-drehen-form { position: absolute; top: 4px; left: 4px; }
+.personen-checkboxen-mini .chip-avatar-only { padding: 2px; border-radius: 50%; gap: 0; }
+.bild-drehen-form-info { margin-top: 0.4rem; }
 .personen-chip:has(input:checked) {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 28%, var(--surface2));
@@ -1414,7 +1414,8 @@ textarea { resize: vertical; }
 @media (max-width: 900px) {
 
     body { display: block; padding-top: 0; }
-    body > main { flex: none; padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+    body > main { flex: none; }
+    main.container { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
 
     /* Hamburger nur noch für Zugriff auf Kategorien / vollständiges Menü */
     .nav-toggle {
@@ -1491,7 +1492,7 @@ textarea { resize: vertical; }
 @media (max-width: 640px) {
 
     /* Container & Cards */
-    .container { padding: 0.75rem 0.75rem 1.5rem; }
+    .container { padding: 0.75rem 0.75rem calc(80px + env(safe-area-inset-bottom)); }
     .card { padding: 1rem; margin-bottom: 0.75rem; }
 
     /* Buttons — Touch-freundlich (mind. 44px) */
@@ -1573,7 +1574,7 @@ textarea { resize: vertical; }
 
 /* ── Tablet (641–900px) ───────────────────────────────────────────────────── */
 @media (min-width: 641px) and (max-width: 900px) {
-    .container { padding: 1.25rem 1rem; }
+    .container { padding: 1.25rem 1rem calc(80px + env(safe-area-inset-bottom)); }
     .kalender-tabelle td { height: 75px; }
     .galerie-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
     .btn { min-height: 44px; }

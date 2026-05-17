@@ -115,12 +115,6 @@
                      alt="{{ bild.beschreibung }}"
                      onclick="oeffneLichtbox({{ loop.index0 }})" class="bild-thumb">
                 {% endif %}
-                {% if not bild.dateiname | ist_video %}
-                <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}"
-                      class="bild-loeschen-form bild-drehen-form">
-                    <button type="submit" class="bild-loeschen-btn" title="90° drehen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
-                </form>
-                {% endif %}
                 <form method="POST" action="{{ url_for('bild_loesen', bild_id=bild.id) }}"
                       onsubmit="return confirm('Bild vom Ereignis lösen? Es bleibt in der Galerie erhalten.')"
                       class="bild-loeschen-form">
@@ -146,31 +140,28 @@
                     {% set rest = alle_personen | rejectattr('favorit') | list %}
                     <p class="label-klein">Personen:</p>
                     <div class="personen-checkboxen personen-checkboxen-mini">
-                        {% for p in fav %}
-                        <label class="personen-chip" title="{{ p.name }}">
+                        {% for p in fav + rest %}
+                        <label class="personen-chip {% if p.avatar %}chip-avatar-only{% endif %}" title="{{ p.name }}">
                             <input type="checkbox" name="personen" value="{{ p.id }}"
                                 {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
                             <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                            {% if not p.avatar %}{{ p.name }}{% endif %}
                         </label>
                         {% endfor %}
-                        {% if rest %}
-                        {% set ns2 = namespace(offen=false) %}
-                        {% for p in rest %}{% if p.id in bild_personen.get(bild.id, []) %}{% set ns2.offen = true %}{% endif %}{% endfor %}
-                        {% for p in rest %}
-                        <label class="personen-chip" title="{{ p.name }}">
-                            <input type="checkbox" name="personen" value="{{ p.id }}"
-                                {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
-                            <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
-                        </label>
-                        {% endfor %}
-                        {% endif %}
                     </div>
                     {% endif %}
 
                     <input type="text" name="personen_neu"
                            placeholder="Neue Person (kommagetrennt)" class="input-small">
-                    <button type="submit" class="btn btn-sm">Speichern</button>
+                    <div class="bild-aktionen-zeile">
+                        <button type="submit" class="btn btn-sm">Speichern</button>
+                    </div>
                 </form>
+                {% if not bild.dateiname | ist_video %}
+                <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}" class="bild-drehen-form-info">
+                    <button type="submit" class="btn btn-sm btn-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Drehen</button>
+                </form>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
