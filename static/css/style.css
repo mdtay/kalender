@@ -964,7 +964,7 @@ textarea { resize: vertical; }
     overflow: hidden;
 }
 .farb-vorschau { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
-.kategorie-name { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kategorie-name { flex: 1; min-width: 0; font-weight: 500; }
 .person-avatar {
     width: 40px;
     height: 40px;
@@ -1003,8 +1003,8 @@ textarea { resize: vertical; }
 .person-avatar-upload:hover .avatar-upload-overlay { opacity: 1; }
 
 /* Inline-Form */
-.inline-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.inline-form .input { flex: 1; min-width: 150px; }
+.inline-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: nowrap; min-width: 0; }
+.inline-form .input { flex: 1; min-width: 0; }
 
 /* Radio-Gruppe */
 .radio-gruppe { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
