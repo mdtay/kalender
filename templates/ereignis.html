@@ -115,36 +115,46 @@
                      alt="{{ bild.beschreibung }}"
                      onclick="oeffneLichtbox({{ loop.index0 }})" class="bild-thumb">
                 {% endif %}
+                <form method="POST" action="{{ url_for('bild_loesen', bild_id=bild.id) }}"
+                      onsubmit="return confirm('Bild vom Ereignis lösen? Es bleibt in der Galerie erhalten.')"
+                      class="bild-loeschen-form">
+                    <input type="hidden" name="next" value="{{ url_for('ereignis_bearbeiten', eid=e.id) }}">
+                    <button type="submit" class="bild-loeschen-btn bild-loesen-btn" title="Vom Ereignis lösen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg></button>
+                </form>
                 <form method="POST" action="{{ url_for('bild_loeschen', bild_id=bild.id) }}"
                       onsubmit="return confirm('Bild wirklich löschen?')"
-                      class="bild-loeschen-form">
+                      class="bild-loeschen-form bild-loeschen-form-rechts">
                     <button type="submit" class="bild-loeschen-btn" title="Bild löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                 </form>
                 {% if not bild.dateiname | ist_video %}
                 <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}"
-                      class="bild-loeschen-form bild-loeschen-form-rechts">
+                      class="bild-loeschen-form bild-loeschen-form-drehen">
                     <button type="submit" class="bild-loeschen-btn bild-loesen-btn" title="90° drehen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
                 </form>
                 {% endif %}
             </div>
             <div class="bild-info">
                 <form method="POST" action="{{ url_for('bild_meta', bild_id=bild.id) }}">
-                    <input type="text" name="beschreibung" value="{{ bild.beschreibung }}"
-                           placeholder="Beschreibung..." class="input-small">
-                    <div class="tag-eingabe" data-wert="{{ bild.tags or '' }}">
-                        <input type="hidden" name="tags" value="{{ bild.tags or '' }}">
-                    </div>
+                    <details class="bild-meta-akkordeon" {% if bild.beschreibung or bild.tags %}open{% endif %}>
+                        <summary>Beschreibung & Tags</summary>
+                        <div class="bild-meta-felder">
+                            <input type="text" name="beschreibung" value="{{ bild.beschreibung }}"
+                                   placeholder="Beschreibung..." class="input-small">
+                            <div class="tag-eingabe" data-wert="{{ bild.tags or '' }}">
+                                <input type="hidden" name="tags" value="{{ bild.tags or '' }}">
+                            </div>
+                        </div>
+                    </details>
                     {% if alle_personen %}
                     {% set fav = alle_personen | selectattr('favorit') | list %}
                     {% set rest = alle_personen | rejectattr('favorit') | list %}
-                    <p class="label-klein">Personen:</p>
                     <div class="personen-checkboxen personen-checkboxen-mini">
                         {% for p in fav + rest %}
-                        <label class="personen-chip {% if p.avatar %}chip-avatar-only{% endif %}" title="{{ p.name }}">
+                        <label class="personen-chip" title="{{ p.name }}">
                             <input type="checkbox" name="personen" value="{{ p.id }}"
                                 {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
                             <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
-                            {% if not p.avatar %}{{ p.name }}{% endif %}
+                            {{ p.name }}
                         </label>
                         {% endfor %}
                     </div>

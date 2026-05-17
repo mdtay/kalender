@@ -192,17 +192,22 @@
                 </div>
                 <form method="POST" action="{{ url_for('bild_meta', bild_id=bild.id) }}" style="display:flex;flex-direction:column;flex:1;gap:0.4rem">
                     <input type="hidden" name="next" value="{{ request.url }}">
-                    <input type="text" name="beschreibung" value="{{ bild.beschreibung }}"
-                           placeholder="Beschreibung..." class="input-small">
-                    <div class="tag-eingabe" data-wert="{{ bild_tags_map.get(bild.id, '') }}">
-                        <input type="hidden" name="tags" value="{{ bild_tags_map.get(bild.id, '') }}">
-                    </div>
+                    <details class="bild-meta-akkordeon" {% if bild.beschreibung or bild_tags_map.get(bild.id, '') %}open{% endif %}>
+                        <summary>Beschreibung & Tags</summary>
+                        <div class="bild-meta-felder">
+                            <input type="text" name="beschreibung" value="{{ bild.beschreibung }}"
+                                   placeholder="Beschreibung..." class="input-small">
+                            <div class="tag-eingabe" data-wert="{{ bild_tags_map.get(bild.id, '') }}">
+                                <input type="hidden" name="tags" value="{{ bild_tags_map.get(bild.id, '') }}">
+                            </div>
+                        </div>
+                    </details>
                     {% if alle_personen %}
                     {% set fav = alle_personen | selectattr('favorit') | list %}
                     {% set rest = alle_personen | rejectattr('favorit') | list %}
-                    <div class="personen-checkboxen">
-                        {% for p in fav %}
-                        <label class="personen-chip">
+                    <div class="personen-checkboxen personen-checkboxen-mini">
+                        {% for p in fav + rest %}
+                        <label class="personen-chip" title="{{ p.name }}">
                             <input type="checkbox" name="personen" value="{{ p.id }}"
                                 {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
                             <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
@@ -210,23 +215,6 @@
                         </label>
                         {% endfor %}
                     </div>
-                    {% if rest %}
-                    {% set ns3 = namespace(offen=false) %}
-                    {% for p in rest %}{% if p.id in bild_personen.get(bild.id, []) %}{% set ns3.offen = true %}{% endif %}{% endfor %}
-                    <details class="weitere-personen-details" {% if ns3.offen %}open{% endif %}>
-                        <summary>Weitere ({{ rest | length }})</summary>
-                        <div class="personen-checkboxen" style="margin-top:0.5rem">
-                            {% for p in rest %}
-                            <label class="personen-chip">
-                                <input type="checkbox" name="personen" value="{{ p.id }}"
-                                    {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
-                                <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
-                                {{ p.name }}
-                            </label>
-                            {% endfor %}
-                        </div>
-                    </details>
-                    {% endif %}
                     {% endif %}
                     <button type="submit" class="btn btn-sm" style="margin-top:auto;align-self:flex-start">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>

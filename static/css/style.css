@@ -236,18 +236,39 @@ textarea { resize: vertical; }
     user-select: none;
 }
 .personen-chip input { display: none; }
-.personen-checkboxen-mini .chip-avatar-only { padding: 2px; border-radius: 50%; gap: 0; }
 .personen-checkboxen-mini .personen-chip {
     padding: 0.15rem 0.4rem;
     font-size: 0.72rem;
     gap: 0.25rem;
-    border-width: 1px;
+    border: none;
+    background: var(--surface);
 }
 .personen-checkboxen-mini .person-avatar-sm {
     width: 16px;
     height: 16px;
     font-size: 0.6rem;
 }
+.bild-meta-akkordeon { margin-bottom: 0.2rem; }
+.bild-meta-akkordeon > summary {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0;
+    user-select: none;
+}
+.bild-meta-akkordeon > summary::before {
+    content: '›';
+    display: inline-block;
+    transition: transform 0.15s;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+.bild-meta-akkordeon[open] > summary::before { transform: rotate(90deg); }
+.bild-meta-felder { display: flex; flex-direction: column; gap: 0.4rem; padding-top: 0.3rem; }
 .personen-chip:has(input:checked) {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 28%, var(--surface2));
