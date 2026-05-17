@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}
+    {{ monat_name }} {{ jahr }}
+{% endblock %}
+
+{% block content %}
+    <div class="kalender-header">
+        <a href="{{ url_for('monat', jahr=prev_jahr, monat=prev_monat, kategorien=kategorie_filter, personen=person_filter) }}" class="btn btn-ghost kalender-nav-btn">‹</a>
+        <h1>{{ monat_name }} {{ jahr }}</h1>
+        <a href="{{ url_for('monat', jahr=next_jahr, monat=next_monat, kategorien=kategorie_filter, personen=person_filter) }}" class="btn btn-ghost kalender-nav-btn">›</a>
+        <a href="{{ url_for('monat', jahr=heute[:4]|int, monat=heute[5:7]|int, kategorien=kategorie_filter, personen=person_filter) }}" class="btn btn-ghost btn-sm heute-link">Heute</a>
+    </div>
+
+
+
+    <table class="kalender-tabelle">
+        <thead>
+            <tr>
+                <th>Mo</th><th>Di</th><th>Mi</th><th>Do</th><th>Fr</th>
+                <th class="wochenende">Sa</th><th class="wochenende">So</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for woche in kalender %}
+                <tr>
+                    {% for tag_num in woche %}
+                        {% if tag_num == 0 %}
+                            <td class="leer"></td>
+                        {% else %}
+                            {% set datum_str = '%04d-%02d-%02d' | format(jahr, monat, tag_num) %}
+                            {% set ist_heute = datum_str == heute %}
+                            {% set kategorien_liste = tage_daten.get(datum_str, []) %}
+                            {% set hat_eintrag = datum_str in tage_mit_eintrag %}
+                            <td class="tag-zelle {% if ist_heute %}heute{% endif %} {% if hat_eintrag %}hat-eintrag{% endif %} {% if kategorie_filter and not hat_eintrag %}gedimmt{% endif %}"
+                                {% if darstellung == 'hintergrund' and kategorien_liste %}
+                                data-hintergrund="{{ kategorien_liste[0].farbe }}22"
+                                {% endif %}>
+                                <a href="{{ url_for('tag', datum=datum_str) }}" class="tag-link">
+                                    <span class="tag-nummer">{{ tag_num }}</span>
+                                    {% if kategorien_liste %}
+                                        {% if darstellung == 'punkte' %}
+                                        <div class="farb-punkte">
+                                            <span class="punkt kuchendiagramm-kreis"
+                                                  style="background:{{ kategorien_liste | map(attribute='farbe') | list | kuchendiagramm }};"
+                                                  title="{{ kategorien_liste | map(attribute='name') | join(', ') }}"></span>
+                                        </div>
+                                        {% elif darstellung == 'streifen' %}
+                                        <div class="farb-streifen">
+                                            {% for k in kategorien_liste %}
+                                            <div class="streifen" style="background:{{ k.farbe }};" title="{{ k.name }}"></div>
+                                            {% endfor %}
+                                        </div>
+                                        {% elif darstellung == 'hintergrund' %}
+                                        <div class="farb-punkte">
+                                            <span class="punkt kuchendiagramm-kreis"
+                                                  style="background:{{ kategorien_liste | map(attribute='farbe') | list | kuchendiagramm }};"
+                                                  title="{{ kategorien_liste | map(attribute='name') | join(', ') }}"></span>
+                                        </div>
+                                        {% endif %}
+                                    {% endif %}
+                                </a>
+                            </td>
+                        {% endif %}
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if alle_kategorien or alle_personen %}
+        <form method="GET" id="kalender-filter-form" class="kalender-filter">
+            {% if alle_kategorien %}
+                <div class="kalender-filter-zeile">
+                    <span class="filter-label">Ereignis-Typen</span>
+                    <div class="kalender-filter-chips">
+                        {% for k in alle_kategorien %}
+                        <label class="kategorie-chip" style="--farbe: {{ k.farbe }}">
+                            <input type="checkbox" name="kategorien" value="{{ k.id }}"
+                                {% if k.id|string in kategorie_filter %}checked{% endif %}
+                                onchange="document.getElementById('kalender-filter-form').submit()">
+                            <span class="chip-dot" style="background:{{ k.farbe }}"></span>
+                            {{ k.name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+            {% if alle_personen %}
+                <div class="kalender-filter-zeile">
+                    <span class="filter-label">Personen</span>
+                    <div class="kalender-filter-chips">
+                        {% for p in alle_personen %}
+                        <label class="personen-chip">
+                            <input type="checkbox" name="personen" value="{{ p.id }}"
+                                {% if p.id|string in person_filter %}checked{% endif %}
+                                onchange="document.getElementById('kalender-filter-form').submit()">
+                            <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                            {{ p.name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+            {% if kategorie_filter or person_filter %}
+                <div class="aktive-filter-zeile">
+                    {% for k in alle_kategorien %}
+                        {% if k.id|string in kategorie_filter %}
+                        <a href="{{ url_for('monat', jahr=jahr, monat=monat, kategorien=kategorie_filter|reject('equalto', k.id|string)|list, personen=person_filter) }}"
+                           class="aktiver-filter-chip" style="--farbe: {{ k.farbe }}">
+                            <span class="chip-dot" style="background:{{ k.farbe }}"></span>
+                            {{ k.name }} ×
+                        </a>
+                        {% endif %}
+                    {% endfor %}
+                    {% for p in alle_personen %}
+                        {% if p.id|string in person_filter %}
+                        <a href="{{ url_for('monat', jahr=jahr, monat=monat, kategorien=kategorie_filter, personen=person_filter|reject('equalto', p.id|string)|list) }}"
+                           class="aktiver-filter-chip">
+                            <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                            {{ p.name }} ×
+                        </a>
+                        {% endif %}
+                    {% endfor %}
+                    <a href="{{ url_for('monat', jahr=jahr, monat=monat) }}" class="btn btn-ghost btn-sm">× Alle</a>
+                </div>
+            {% endif %}
+        </form>
+    {% endif %}
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Personen{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Personen verwalten</h1>
+</div>
+
+<section class="card">
+    <h2>Neue Person</h2>
+    <form method="POST" action="{{ url_for('person_neu') }}" class="inline-form">
+        <input type="text" name="name" placeholder="Name" required class="input">
+        <button type="submit" class="btn btn-primary"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Hinzufügen</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Alle Personen</h2>
+    {% if personen %}
+    <ul class="kategorie-liste">
+        {% for p in personen %}
+        <li class="kategorie-item">
+            <form method="POST" action="{{ url_for('person_avatar', pid=p.id) }}"
+                  enctype="multipart/form-data" id="avatar-form-{{ p.id }}">
+                <input type="file" name="avatar" accept="image/*"
+                       id="avatar-input-{{ p.id }}" style="display:none"
+                       onchange="document.getElementById('avatar-form-{{ p.id }}').submit()">
+                <label for="avatar-input-{{ p.id }}" class="person-avatar person-avatar-upload" title="Foto hochladen">
+                    {% if p.avatar %}
+                    <img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="{{ p.name }}">
+                    {% else %}
+                    {{ p.name[0].upper() }}
+                    {% endif %}
+                    <span class="avatar-upload-overlay">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    </span>
+                </label>
+            </form>
+            <form method="POST" action="{{ url_for('person_bearbeiten', pid=p.id) }}" class="inline-form" style="flex:1">
+                <input type="text" name="name" value="{{ p.name }}" required class="input input-sm">
+                <button type="submit" class="btn btn-sm" title="Speichern"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+            </form>
+            <form method="POST" action="{{ url_for('person_favorit', pid=p.id) }}">
+                <button type="submit" class="btn btn-sm {% if p.favorit %}btn-favorit{% endif %}" title="{{ 'Favorit entfernen' if p.favorit else 'Als Favorit markieren' }}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="{{ 'currentColor' if p.favorit else 'none' }}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </button>
+            </form>
+            <form method="POST" action="{{ url_for('person_loeschen', pid=p.id) }}"
+                  onsubmit="return confirm('Person &quot;{{ p.name }}&quot; löschen?')">
+                <button type="submit" class="btn btn-sm btn-danger" title="Löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="hint">Noch keine Personen angelegt.</p>
+    {% endif %}
+</section>
+{% endblock %}

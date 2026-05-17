@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}{{ e.titel if e.titel else 'Neues Ereignis' }}{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <a href="{{ url_for('tag', datum=e.datum) }}" class="btn btn-ghost">← {{ datum_formatiert }}</a>
+    <h1>{{ e.titel if e.titel else 'Neues Ereignis' }}</h1>
+</div>
+
+<form method="POST" enctype="multipart/form-data">
+
+    <section class="card">
+        <h2>Datum</h2>
+        <input type="date" name="datum" value="{{ e.datum }}" class="input">
+    </section>
+
+    <section class="card">
+        <h2>Titel</h2>
+        <input type="text" name="titel" value="{{ e.titel }}" placeholder="z.B. Ausflug zum See" class="input">
+    </section>
+
+    <section class="card">
+        <h2>Kategorien</h2>
+        <div class="kategorie-auswahl">
+            {% for k in alle_kategorien %}
+            <label class="kategorie-chip" style="--farbe: {{ k.farbe }}">
+                <input type="checkbox" name="kategorien" value="{{ k.id }}"
+                    {% if k.id in ausgewaehlte_kategorien %}checked{% endif %}>
+                <span class="chip-dot" style="background:{{ k.farbe }}"></span>
+                {{ k.name }}
+            </label>
+            {% endfor %}
+            {% if not alle_kategorien %}
+            <p class="hint"><a href="{{ url_for('kategorien') }}">Kategorien anlegen →</a></p>
+            {% endif %}
+        </div>
+    </section>
+
+    {% if alle_personen %}
+    {% set favoriten = alle_personen | selectattr('favorit') | list %}
+    {% set weitere = alle_personen | rejectattr('favorit') | list %}
+    <section class="card">
+        <h2>Personen</h2>
+        <div class="personen-checkboxen">
+            {% for p in favoriten %}
+            <label class="personen-chip">
+                <input type="checkbox" name="ereignis_personen" value="{{ p.id }}"
+                    {% if p.id in ausgewaehlte_personen %}checked{% endif %}>
+                <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                {{ p.name }}
+            </label>
+            {% endfor %}
+        </div>
+        {% if weitere %}
+        {% set ns = namespace(offen=false) %}
+        {% for p in weitere %}{% if p.id in ausgewaehlte_personen %}{% set ns.offen = true %}{% endif %}{% endfor %}
+        <details class="weitere-personen-details" {% if ns.offen %}open{% endif %}>
+            <summary>Weitere ({{ weitere | length }})</summary>
+            <div class="personen-checkboxen" style="margin-top:0.5rem">
+                {% for p in weitere %}
+                <label class="personen-chip">
+                    <input type="checkbox" name="ereignis_personen" value="{{ p.id }}"
+                        {% if p.id in ausgewaehlte_personen %}checked{% endif %}>
+                    <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                    {{ p.name }}
+                </label>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    <section class="card">
+        <h2>Tagebucheintrag</h2>
+        <textarea name="text" rows="8" placeholder="Was hast du erlebt?">{{ e.text }}</textarea>
+    </section>
+
+    <button type="submit" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Speichern</button>
+</form>
+
+<section class="card" style="margin-top:1.5rem">
+    <h2>Bilder & Videos hochladen</h2>
+    <form method="POST" action="{{ url_for('bilder_hochladen', eid=e.id) }}"
+          enctype="multipart/form-data" class="upload-form">
+        <label class="file-input-label">
+            <input type="file" name="bilder" multiple accept="image/*,video/*" class="file-input-hidden"
+                   id="bilder-input" onchange="zeigeDateiname(this)">
+            <span class="file-input-btn btn btn-ghost">📎 Dateien auswählen</span>
+            <span class="file-input-info" id="datei-info">Keine Dateien ausgewählt</span>
+        </label>
+        <button type="submit" id="hochladen-btn" class="btn btn-primary" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Hochladen</button>
+    </form>
+</section>
+
+{% if bilder %}
+<section class="card" style="margin-top:1.5rem">
+    <h2>Bilder ({{ bilder | length }})</h2>
+    <div class="bilder-grid">
+        {% for bild in bilder %}
+        <div class="bild-karte">
+            <div class="bild-thumb-wrapper">
+                {% if bild.dateiname | ist_video %}
+                {% if bild.thumbnail %}
+                <img src="{{ url_for('static', filename='uploads/' + bild.thumbnail) }}"
+                     alt="{{ bild.beschreibung }}" class="bild-thumb"
+                     onclick="oeffneLichtbox({{ loop.index0 }})">
+                <span class="video-badge">▶ Video</span>
+                {% else %}
+                <div class="video-placeholder bild-thumb" onclick="oeffneLichtbox({{ loop.index0 }})">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Video
+                </div>
+                {% endif %}
+                {% else %}
+                <img src="{{ url_for('static', filename='uploads/' + bild.dateiname) }}"
+                     alt="{{ bild.beschreibung }}"
+                     onclick="oeffneLichtbox({{ loop.index0 }})" class="bild-thumb">
+                {% endif %}
+                <form method="POST" action="{{ url_for('bild_loesen', bild_id=bild.id) }}"
+                      onsubmit="return confirm('Bild vom Ereignis lösen? Es bleibt in der Galerie erhalten.')"
+                      class="bild-loeschen-form">
+                    <input type="hidden" name="next" value="{{ url_for('ereignis_bearbeiten', eid=e.id) }}">
+                    <button type="submit" class="bild-loeschen-btn bild-loesen-btn" title="Vom Ereignis lösen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg></button>
+                </form>
+                <form method="POST" action="{{ url_for('bild_loeschen', bild_id=bild.id) }}"
+                      onsubmit="return confirm('Bild wirklich löschen?')"
+                      class="bild-loeschen-form bild-loeschen-form-rechts">
+                    <button type="submit" class="bild-loeschen-btn" title="Bild löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                </form>
+            </div>
+            <div class="bild-info">
+                <form method="POST" action="{{ url_for('bild_meta', bild_id=bild.id) }}">
+                    <input type="text" name="beschreibung" value="{{ bild.beschreibung }}"
+                           placeholder="Beschreibung..." class="input-small">
+                    <div class="tag-eingabe" data-wert="{{ bild.tags or '' }}">
+                        <input type="hidden" name="tags" value="{{ bild.tags or '' }}">
+                    </div>
+
+                    {% if alle_personen %}
+                    {% set fav = alle_personen | selectattr('favorit') | list %}
+                    {% set rest = alle_personen | rejectattr('favorit') | list %}
+                    <p class="label-klein">Personen:</p>
+                    <div class="personen-checkboxen">
+                        {% for p in fav %}
+                        <label class="personen-chip">
+                            <input type="checkbox" name="personen" value="{{ p.id }}"
+                                {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
+                            <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                            {{ p.name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% if rest %}
+                    {% set ns2 = namespace(offen=false) %}
+                    {% for p in rest %}{% if p.id in bild_personen.get(bild.id, []) %}{% set ns2.offen = true %}{% endif %}{% endfor %}
+                    <details class="weitere-personen-details" {% if ns2.offen %}open{% endif %}>
+                        <summary>Weitere ({{ rest | length }})</summary>
+                        <div class="personen-checkboxen" style="margin-top:0.5rem">
+                            {% for p in rest %}
+                            <label class="personen-chip">
+                                <input type="checkbox" name="personen" value="{{ p.id }}"
+                                    {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
+                                <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                                {{ p.name }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </details>
+                    {% endif %}
+                    {% endif %}
+
+                    <input type="text" name="personen_neu"
+                           placeholder="Neue Person (kommagetrennt)" class="input-small">
+                    <button type="submit" class="btn btn-sm">Speichern</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<div id="lightbox" class="lightbox">
+    <div class="lightbox-overlay" onclick="schliesseLichtbox()"></div>
+    <button class="lightbox-close" onclick="schliesseLichtbox()" title="Schließen">×</button>
+    <button class="lightbox-nav lightbox-prev" onclick="navigiereLichtbox(-1)">‹</button>
+    <div class="lightbox-content" onclick="schliesseLichtbox()">
+        <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
+        <video id="lightbox-video" controls onclick="event.stopPropagation()"></video>
+    </div>
+    <button class="lightbox-nav lightbox-next" onclick="navigiereLichtbox(1)">›</button>
+    <div class="lightbox-footer">
+        <span class="lightbox-zaehler" id="lightbox-zaehler"></span>
+        <div class="lightbox-meta">
+            <span class="lightbox-meta-datum" id="lightbox-datum"></span>
+            <span class="lightbox-meta-beschreibung" id="lightbox-beschreibung"></span>
+        </div>
+        <button class="lightbox-fullscreen-btn" onclick="toggleFullscreen()" title="Vollbild" id="lb-fs-btn">
+            <svg id="lb-fs-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const alleTags = {{ alle_tags | map(attribute='tag') | list | tojson }};
+document.querySelectorAll('.tag-eingabe').forEach(el => new TagEingabe(el, alleTags));
+
+// Lightbox
+const bilderDaten = [
+    {% for bild in bilder %}
+    {
+        src: "{{ url_for('static', filename='uploads/' + bild.dateiname) }}",
+        istVideo: {{ 'true' if bild.dateiname | ist_video else 'false' }},
+        datum: "{{ bild.datum }}",
+        beschreibung: "{{ bild.beschreibung | replace('"', '\\"') }}"
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
+let aktuellerIndex = 0;
+
+function zeigeInLichtbox(index) {
+    const m = bilderDaten[index];
+    const img = document.getElementById('lightbox-img');
+    const video = document.getElementById('lightbox-video');
+    if (m.istVideo) {
+        img.style.display = 'none';
+        video.style.display = 'block';
+        video.src = m.src;
+        video.play();
+    } else {
+        video.pause();
+        video.style.display = 'none';
+        video.src = '';
+        img.style.display = 'block';
+        img.src = m.src;
+    }
+    document.getElementById('lightbox-zaehler').textContent = (index + 1) + ' / ' + bilderDaten.length;
+    document.getElementById('lightbox-datum').textContent = m.datum || '';
+    document.getElementById('lightbox-beschreibung').textContent = m.beschreibung || '';
+}
+function oeffneLichtbox(index) {
+    aktuellerIndex = index;
+    zeigeInLichtbox(index);
+    document.getElementById('lightbox').classList.add('aktiv');
+    document.body.style.overflow = 'hidden';
+}
+function schliesseLichtbox() {
+    document.getElementById('lightbox').classList.remove('aktiv');
+    document.body.style.overflow = '';
+    const video = document.getElementById('lightbox-video');
+    video.pause();
+    video.src = '';
+}
+let lbTransitioning = false;
+function navigiereLichtbox(richtung) {
+    if (lbTransitioning) return;
+    lbTransitioning = true;
+    const img = document.getElementById('lightbox-img');
+    const video = document.getElementById('lightbox-video');
+    const outEl = img.style.display !== 'none' ? img : video;
+    outEl.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
+    outEl.style.opacity = '0';
+    outEl.style.transform = richtung > 0 ? 'translateX(-50px)' : 'translateX(50px)';
+    setTimeout(() => {
+        [img, video].forEach(el => {
+            el.style.transition = '';
+            el.style.opacity = '';
+            el.style.transform = '';
+            el.classList.remove('lb-slide-in-right', 'lb-slide-in-left');
+        });
+        aktuellerIndex = (aktuellerIndex + richtung + bilderDaten.length) % bilderDaten.length;
+        zeigeInLichtbox(aktuellerIndex);
+        const inEl = bilderDaten[aktuellerIndex].istVideo ? video : img;
+        inEl.classList.add(richtung > 0 ? 'lb-slide-in-right' : 'lb-slide-in-left');
+        setTimeout(() => {
+            inEl.classList.remove('lb-slide-in-right', 'lb-slide-in-left');
+            lbTransitioning = false;
+        }, 280);
+    }, 150);
+}
+
+const FS_ENTER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+const FS_EXIT  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.getElementById('lightbox').requestFullscreen().catch(() => {});
+    } else {
+        document.exitFullscreen();
+    }
+}
+document.addEventListener('fullscreenchange', () => {
+    document.getElementById('lb-fs-icon').innerHTML = document.fullscreenElement ? FS_EXIT : FS_ENTER;
+});
+
+document.addEventListener('keydown', e => {
+    if (!document.getElementById('lightbox').classList.contains('aktiv')) return;
+    if (e.key === 'Escape') schliesseLichtbox();
+    if (e.key === 'ArrowLeft') navigiereLichtbox(-1);
+    if (e.key === 'ArrowRight') navigiereLichtbox(1);
+    if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+});
+let touchStartX = 0;
+document.getElementById('lightbox').addEventListener('touchstart', e => {
+    touchStartX = e.changedTouches[0].clientX;
+}, { passive: true });
+document.getElementById('lightbox').addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 50) navigiereLichtbox(dx < 0 ? 1 : -1);
+}, { passive: true });
+
+function zeigeDateiname(input) {
+    const info = document.getElementById('datei-info');
+    const btn = document.getElementById('hochladen-btn');
+    if (input.files.length === 0) {
+        info.textContent = 'Keine Dateien ausgewählt';
+        btn.style.display = 'none';
+    } else if (input.files.length === 1) {
+        info.textContent = input.files[0].name;
+        btn.style.display = '';
+    } else {
+        info.textContent = input.files.length + ' Dateien ausgewählt';
+        btn.style.display = '';
+    }
+}
+</script>
+{% endblock %}

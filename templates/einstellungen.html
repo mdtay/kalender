@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Einstellungen</h1>
+</div>
+
+<section class="card">
+    <h2>Kategoriedarstellung im Kalender</h2>
+    <form method="POST">
+        <div class="radio-gruppe">
+            <label class="radio-option">
+                <input type="radio" name="darstellung" value="punkte" {% if darstellung == 'punkte' %}checked{% endif %}>
+                <span class="radio-vorschau">
+                    <span class="punkt" style="background:#e74c3c"></span>
+                    <span class="punkt" style="background:#3498db"></span>
+                </span>
+                Farbige Punkte
+            </label>
+            <label class="radio-option">
+                <input type="radio" name="darstellung" value="streifen" {% if darstellung == 'streifen' %}checked{% endif %}>
+                <span class="radio-vorschau streifen-vorschau">
+                    <span class="streifen" style="background:#e74c3c"></span>
+                    <span class="streifen" style="background:#3498db"></span>
+                </span>
+                Farbige Streifen
+            </label>
+            <label class="radio-option">
+                <input type="radio" name="darstellung" value="hintergrund" {% if darstellung == 'hintergrund' %}checked{% endif %}>
+                <span class="radio-vorschau hintergrund-vorschau" style="background:#e74c3c22">
+                    <span class="punkt" style="background:#e74c3c"></span>
+                </span>
+                Hintergrundfarbe
+            </label>
+        </div>
+        <button type="submit" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Speichern</button>
+    </form>
+</section>
+
+
+<section class="card">
+    <h2>Theme</h2>
+    <form method="POST" id="theme-form">
+        <div class="theme-picker-grid">
+            {% for name, t in themes.items() %}
+            <label class="theme-card {% if aktiver_theme == name %}aktiv{% endif %}">
+                <input type="radio" name="farbe_theme" value="{{ name }}"
+                       {% if aktiver_theme == name %}checked{% endif %}
+                       onchange="document.getElementById('theme-form').submit()">
+                <div class="theme-mini" style="background:{{ t.farbe_bg }}">
+                    <div class="theme-mini-card" style="background:{{ t.farbe_surface }}">
+                        <div class="theme-mini-accent" style="background:{{ t.farbe_akzent }}"></div>
+                        <div class="theme-mini-lines">
+                            <div></div>
+                            <div></div>
+                        </div>
+                    </div>
+                    <span class="theme-mini-dot" style="background:{{ t.farbe_danger }}"></span>
+                </div>
+                <span class="theme-card-name">{{ t.label }}</span>
+            </label>
+            {% endfor %}
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Speicher</h2>
+    <div class="speicher-balken-wrapper">
+        <div class="speicher-balken" style="width: {{ speicher.prozent }}%"></div>
+    </div>
+    <div class="speicher-details">
+        <span>{{ speicher.belegt }} belegt</span>
+        <span>{{ speicher.frei }} frei</span>
+    </div>
+    <p class="hint" style="margin-top:0.5rem">Gesamt: {{ speicher.gesamt }}</p>
+</section>
+
+<section class="card">
+    <h2>Tags verwalten</h2>
+    {% if alle_tags %}
+    <ul class="kategorie-liste">
+        {% for t in alle_tags %}
+        <li class="kategorie-item">
+            <span style="flex:1;font-weight:500">#{{ t.tag }}</span>
+            <span class="hint" style="font-size:0.82rem">{{ t.anzahl }}×</span>
+            <form method="POST" action="{{ url_for('tag_loeschen', tag=t.tag) }}"
+                  onsubmit="return confirm('Tag «{{ t.tag }}» von allen {{ t.anzahl }} Bild{{ 'ern' if t.anzahl != 1 else '' }} entfernen?')">
+                <button type="submit" class="btn btn-sm btn-danger" title="Tag löschen">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="hint">Noch keine Tags vorhanden.</p>
+    {% endif %}
+</section>
+
+<section class="card">
+    <h2>Passwort ändern</h2>
+    <form method="POST" action="{{ url_for('passwort_einrichten') }}">
+        <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem">
+            <input type="password" name="passwort" class="input" placeholder="Neues Passwort (min. 6 Zeichen)" autocomplete="new-password">
+            <input type="password" name="passwort2" class="input" placeholder="Passwort wiederholen" autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Passwort speichern
+        </button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Backup</h2>
+    <p class="hint" style="margin-bottom:1rem">Exportiert alle Einträge, Bilder und Daten als ZIP-Archiv.</p>
+    <a href="{{ url_for('export') }}" class="btn btn-ghost">↓ Backup herunterladen</a>
+</section>
+{% endblock %}

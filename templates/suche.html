@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Suche{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Suche</h1>
+</div>
+
+<section class="card">
+    <form method="GET" action="{{ url_for('suche') }}">
+        <div class="suche-form">
+            <input type="text" name="q" value="{{ q }}" placeholder="Text suchen..." class="input">
+            <select name="person" class="input">
+                <option value="">Alle Personen</option>
+                {% for p in alle_personen %}
+                <option value="{{ p.name }}" {% if person_filter == p.name %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="tag" class="input">
+                <option value="">Alle Tags</option>
+                {% for t in alle_tags %}
+                <option value="{{ t.tag }}" {% if tag_filter == t.tag %}selected{% endif %}>{{ t.tag }}</option>
+                {% endfor %}
+            </select>
+            <div class="datum-range">
+                <input type="date" name="von" value="{{ von }}" class="input" placeholder="Von">
+                <span>bis</span>
+                <input type="date" name="bis" value="{{ bis }}" class="input" placeholder="Bis">
+            </div>
+        </div>
+
+        {% if alle_kategorien %}
+        <div class="filter-gruppe" style="margin-top:1rem">
+            <span class="filter-label">Ereignis-Typen</span>
+            <div class="kategorie-auswahl" style="margin-top:0.4rem">
+                {% for k in alle_kategorien %}
+                <label class="kategorie-chip" style="--farbe: {{ k.farbe }}">
+                    <input type="checkbox" name="kategorien" value="{{ k.id }}"
+                        {% if k.id|string in kategorie_filter %}checked{% endif %}>
+                    <span class="chip-dot" style="background:{{ k.farbe }}"></span>
+                    {{ k.name }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div style="display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap">
+            <button type="submit" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Suchen</button>
+            {% if q or tag_filter or person_filter or kategorie_filter or von or bis %}
+            <a href="{{ url_for('suche') }}" class="btn btn-ghost">Zurücksetzen</a>
+            {% endif %}
+        </div>
+    </form>
+</section>
+
+{% if ergebnisse_ereignisse %}
+<section class="card">
+    <h2>Ereignisse ({{ ergebnisse_ereignisse | length }})</h2>
+    <ul class="ergebnis-liste">
+        {% for e in ergebnisse_ereignisse %}
+        <li>
+            <a href="{{ url_for('ereignis_bearbeiten', eid=e.id) }}" class="ergebnis-link">
+                <strong>{{ e.datum }} — {{ e.titel if e.titel else '(Kein Titel)' }}</strong>
+                <span>{{ e.text[:150] }}{% if e.text | length > 150 %}…{% endif %}</span>
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
+{% if ergebnisse_bilder %}
+<section class="card">
+    <h2>Medien ({{ ergebnisse_bilder | length }})</h2>
+    <div class="bilder-grid bilder-grid-klein">
+        {% for b in ergebnisse_bilder %}
+        <a href="{{ url_for('tag', datum=b.datum) }}" class="bild-ergebnis">
+            {% if b.dateiname | ist_video %}
+            <div class="video-placeholder" style="min-height:90px">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Video
+            </div>
+            {% else %}
+            <img src="{{ url_for('static', filename='uploads/' + b.dateiname) }}" alt="{{ b.beschreibung }}">
+            {% endif %}
+            <span class="bild-datum">{{ b.datum }}</span>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if q or tag_filter or person_filter or kategorie_filter or von or bis %}
+{% if not ergebnisse_ereignisse and not ergebnisse_bilder %}
+<p class="hint">Keine Ergebnisse gefunden.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

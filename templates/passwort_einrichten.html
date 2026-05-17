@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Passwort einrichten</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <style>:root {
+        --accent: {{ theme_akzent }};
+        --accent-hover: {{ theme_akzent_hover }};
+        --bg: {{ theme_bg }};
+        --surface: {{ theme_surface }};
+        --surface2: {{ theme_surface2 }};
+        --border: {{ theme_border }};
+        --text: {{ theme_text }};
+        --text-muted: {{ theme_text_muted }};
+        --danger: {{ theme_danger }};
+    }</style>
+</head>
+<body class="login-body">
+    <div class="login-box">
+        <div class="login-logo">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>Mein Kalender</span>
+        </div>
+        <h1 class="login-titel">Passwort einrichten</h1>
+        <p class="hint" style="margin-bottom:1.25rem;text-align:center">Lege ein Passwort fest, um die App zu schützen.</p>
+        {% if fehler %}
+        <div class="login-fehler">{{ fehler }}</div>
+        {% endif %}
+        <form method="POST">
+            <div class="login-feld">
+                <label for="passwort">Passwort</label>
+                <input type="password" id="passwort" name="passwort"
+                       class="input" placeholder="Mindestens 6 Zeichen" autofocus autocomplete="new-password">
+            </div>
+            <div class="login-feld">
+                <label for="passwort2">Passwort wiederholen</label>
+                <input type="password" id="passwort2" name="passwort2"
+                       class="input" placeholder="••••••••" autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:0.5rem">
+                Passwort speichern
+            </button>
+        </form>
+    </div>
+</body>
+</html>

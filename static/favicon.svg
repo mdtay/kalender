@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Kalender-Körper -->
+  <rect x="2" y="5" width="28" height="25" rx="3" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+  <!-- Kopfzeile -->
+  <rect x="2" y="5" width="28" height="9" rx="3" fill="#3b82f6"/>
+  <rect x="2" y="11" width="28" height="3" fill="#3b82f6"/>
+  <!-- Ringe -->
+  <line x1="10" y1="2" x2="10" y2="9" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="22" y1="2" x2="22" y2="9" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Tageszahl -->
+  <text x="16" y="26" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="700" fill="#f1f5f9" text-anchor="middle">K</text>
+</svg>

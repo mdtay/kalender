@@ -1,0 +1,555 @@
+{% extends "base.html" %}
+{% block title %}Galerie{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h1>Galerie</h1>
+    <span class="badge">{{ gesamt }} Medium{{ 'en' if gesamt != 1 }}</span>
+</div>
+
+<section class="card">
+    <form method="GET" action="{{ url_for('diashow') }}" id="filter-form">
+
+        {% if alle_kategorien %}
+        <div class="filter-gruppe">
+            <span class="filter-label">Ereignis-Typen</span>
+            <div class="kategorie-auswahl">
+                {% for k in alle_kategorien %}
+                <label class="kategorie-chip" style="--farbe: {{ k.farbe }}">
+                    <input type="checkbox" name="kategorien" value="{{ k.id }}"
+                        {% if k.id|string in kategorie_filter %}checked{% endif %}
+                        onchange="document.getElementById('filter-form').submit()">
+                    <span class="chip-dot" style="background:{{ k.farbe }}"></span>
+                    {{ k.name }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if alle_personen %}
+        <div class="filter-gruppe">
+            <span class="filter-label">Personen</span>
+            <div class="personen-checkboxen">
+                {% for p in alle_personen %}
+                <label class="personen-chip">
+                    <input type="checkbox" name="personen" value="{{ p.name }}"
+                        {% if p.name in personen_filter %}checked{% endif %}
+                        onchange="document.getElementById('filter-form').submit()">
+                    <span class="person-avatar-sm">
+                        {% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}
+                    </span>
+                    {{ p.name }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if alle_tags %}
+        <div class="filter-gruppe">
+            <span class="filter-label">Tags</span>
+            <div class="kategorie-auswahl" id="tag-chips">
+                {% for t in alle_tags %}
+                <label class="kategorie-chip" style="--farbe: var(--accent)">
+                    <input type="radio" name="tag" value="{{ t.tag }}"
+                        {% if tag_filter == t.tag %}checked{% endif %}>
+                    <span class="chip-dot" style="background:var(--accent)"></span>
+                    #{{ t.tag }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="filter-gruppe">
+            <span class="filter-label">Zeitraum</span>
+            <div class="datum-schnellwahl-grid">
+                <span class="datum-label">Von</span>
+                <select id="ds-von-jahr" class="input" onchange="datumWahl()">
+                    <option value="">–</option>
+                    {% for j in verfuegbare_jahre %}
+                    <option value="{{ j }}">{{ j }}</option>
+                    {% endfor %}
+                </select>
+                <select id="ds-von-monat" class="input" onchange="datumWahl()">
+                    <option value="">Anfang</option>
+                    <option value="01">Januar</option><option value="02">Februar</option>
+                    <option value="03">März</option><option value="04">April</option>
+                    <option value="05">Mai</option><option value="06">Juni</option>
+                    <option value="07">Juli</option><option value="08">August</option>
+                    <option value="09">September</option><option value="10">Oktober</option>
+                    <option value="11">November</option><option value="12">Dezember</option>
+                </select>
+                <span class="datum-label">Bis</span>
+                <select id="ds-bis-jahr" class="input" onchange="datumWahl()">
+                    <option value="">–</option>
+                    {% for j in verfuegbare_jahre %}
+                    <option value="{{ j }}">{{ j }}</option>
+                    {% endfor %}
+                </select>
+                <select id="ds-bis-monat" class="input" onchange="datumWahl()">
+                    <option value="">Ende</option>
+                    <option value="01">Januar</option><option value="02">Februar</option>
+                    <option value="03">März</option><option value="04">April</option>
+                    <option value="05">Mai</option><option value="06">Juni</option>
+                    <option value="07">Juli</option><option value="08">August</option>
+                    <option value="09">September</option><option value="10">Oktober</option>
+                    <option value="11">November</option><option value="12">Dezember</option>
+                </select>
+            </div>
+            <input type="hidden" name="von" id="ds-von" value="{{ von }}">
+            <input type="hidden" name="bis" id="ds-bis" value="{{ bis }}">
+        </div>
+
+        {% if kategorie_filter or personen_filter or tag_filter or von or bis %}
+        <div class="aktive-filter-zeile">
+            {% for k in alle_kategorien %}
+                {% if k.id|string in kategorie_filter %}
+                <a href="{{ url_for('diashow', kategorien=kategorie_filter|reject('equalto', k.id|string)|list, personen=personen_filter, tag=tag_filter, von=von, bis=bis) }}"
+                   class="aktiver-filter-chip" style="--farbe: {{ k.farbe }}">
+                    <span class="chip-dot" style="background:{{ k.farbe }}"></span>{{ k.name }} ×
+                </a>
+                {% endif %}
+            {% endfor %}
+            {% for p in alle_personen %}
+                {% if p.name in personen_filter %}
+                <a href="{{ url_for('diashow', kategorien=kategorie_filter, personen=personen_filter|reject('equalto', p.name)|list, tag=tag_filter, von=von, bis=bis) }}"
+                   class="aktiver-filter-chip">{{ p.name }} ×</a>
+                {% endif %}
+            {% endfor %}
+            {% if tag_filter %}
+            <a href="{{ url_for('diashow', kategorien=kategorie_filter, personen=personen_filter, von=von, bis=bis) }}"
+               class="aktiver-filter-chip">#{{ tag_filter }} ×</a>
+            {% endif %}
+            {% if von or bis %}
+            <a href="{{ url_for('diashow', kategorien=kategorie_filter, personen=personen_filter, tag=tag_filter) }}"
+               class="aktiver-filter-chip">{{ von or '…' }} – {{ bis or '…' }} ×</a>
+            {% endif %}
+            <a href="{{ url_for('diashow') }}" class="btn btn-ghost btn-sm">× Alle</a>
+        </div>
+        {% endif %}
+
+    </form>
+</section>
+
+{% if bilder_nach_monat %}
+
+<div class="auswahl-toolbar">
+    <label class="alle-auswaehlen-label">
+        <input type="checkbox" id="alle-auswaehlen">
+        Alle auswählen
+    </label>
+    <span class="ausgewaehlt-info" id="ausgewaehlt-zaehler">0 ausgewählt</span>
+    <button class="btn btn-ghost" onclick="startDiashow(0)" title="Alle Bilder als Diashow abspielen">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Diashow
+    </button>
+    <button class="btn btn-primary" onclick="downloadZip()" id="download-btn" disabled>
+        ↓ Als ZIP herunterladen
+    </button>
+</div>
+
+{% set ns = namespace(idx=0) %}
+{% for gruppe in bilder_nach_monat %}
+<div class="galerie-monat">
+    <h2 class="galerie-monat-titel">{{ gruppe.monat_name }}</h2>
+    <div class="galerie-grid">
+        {% for bild in gruppe.bilder %}
+        <div class="galerie-karte">
+            <input type="checkbox" class="bild-checkbox" value="{{ bild.id }}">
+            <div class="bild-thumb-wrapper">
+                {% if bild.dateiname | ist_video %}
+                <video src="{{ url_for('static', filename='uploads/' + bild.dateiname) }}"
+                       class="galerie-video"
+                       onclick="oeffneLichtbox({{ ns.idx }})"
+                       preload="metadata" muted
+                       {% if bild.thumbnail %}poster="{{ url_for('static', filename='uploads/' + bild.thumbnail) }}"{% endif %}></video>
+                <span class="video-badge">▶ Video</span>
+                {% else %}
+                <img src="{{ url_for('static', filename='uploads/' + bild.dateiname) }}"
+                     alt="{{ bild.beschreibung }}"
+                     class="galerie-bild"
+                     onclick="oeffneLichtbox({{ ns.idx }})">
+                {% endif %}
+                <form method="POST" action="{{ url_for('bild_loeschen', bild_id=bild.id) }}"
+                      onsubmit="return confirm('Medium wirklich löschen?')"
+                      class="bild-loeschen-form">
+                    <input type="hidden" name="next" value="{{ request.url }}">
+                    <button type="submit" class="bild-loeschen-btn" title="Löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                </form>
+            </div>
+            <div class="bild-info">
+                <div class="galerie-meta" style="margin-bottom:0.4rem">
+                    <span class="galerie-datum">{{ bild.datum | datum_kurz }}</span>
+                    {% if event_kategorien.get(bild.ereignis_id) %}
+                    <span class="galerie-kat-punkte">
+                        {% for kat in event_kategorien[bild.ereignis_id] %}
+                        <span class="punkt" style="background:{{ kat.farbe }}" title="{{ kat.name }}"></span>
+                        {% endfor %}
+                    </span>
+                    {% endif %}
+                </div>
+                <form method="POST" action="{{ url_for('bild_meta', bild_id=bild.id) }}" style="display:flex;flex-direction:column;flex:1;gap:0.4rem">
+                    <input type="hidden" name="next" value="{{ request.url }}">
+                    <input type="text" name="beschreibung" value="{{ bild.beschreibung }}"
+                           placeholder="Beschreibung..." class="input-small">
+                    <div class="tag-eingabe" data-wert="{{ bild_tags_map.get(bild.id, '') }}">
+                        <input type="hidden" name="tags" value="{{ bild_tags_map.get(bild.id, '') }}">
+                    </div>
+                    {% if alle_personen %}
+                    {% set fav = alle_personen | selectattr('favorit') | list %}
+                    {% set rest = alle_personen | rejectattr('favorit') | list %}
+                    <div class="personen-checkboxen">
+                        {% for p in fav %}
+                        <label class="personen-chip">
+                            <input type="checkbox" name="personen" value="{{ p.id }}"
+                                {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
+                            <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                            {{ p.name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% if rest %}
+                    {% set ns3 = namespace(offen=false) %}
+                    {% for p in rest %}{% if p.id in bild_personen.get(bild.id, []) %}{% set ns3.offen = true %}{% endif %}{% endfor %}
+                    <details class="weitere-personen-details" {% if ns3.offen %}open{% endif %}>
+                        <summary>Weitere ({{ rest | length }})</summary>
+                        <div class="personen-checkboxen" style="margin-top:0.5rem">
+                            {% for p in rest %}
+                            <label class="personen-chip">
+                                <input type="checkbox" name="personen" value="{{ p.id }}"
+                                    {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
+                                <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                                {{ p.name }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </details>
+                    {% endif %}
+                    {% endif %}
+                    <button type="submit" class="btn btn-sm" style="margin-top:auto;align-self:flex-start">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        Speichern
+                    </button>
+                </form>
+                {% if bild.ereignis_titel %}
+                <a href="{{ url_for('ereignis_bearbeiten', eid=bild.ereignis_id) }}" class="galerie-ereignis-link" style="margin-top:0.25rem">{{ bild.ereignis_titel }}</a>
+                {% else %}
+                <form method="POST" action="{{ url_for('bild_zuweisen', bild_id=bild.id) }}" class="zuweisen-form" style="margin-top:0.25rem">
+                    <input type="hidden" name="next" value="{{ request.url }}">
+                    <select name="ereignis_id" class="input-small zuweisen-select">
+                        <option value="">— Ereignis zuweisen —</option>
+                        {% for e in alle_ereignisse %}
+                        <option value="{{ e.id }}">{{ e.datum }} {{ e.titel or '(ohne Titel)' }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-sm" style="margin-top:0.25rem">↗ Zuweisen</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% set ns.idx = ns.idx + 1 %}
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+
+{% else %}
+<p class="hint" style="text-align:center; padding:3rem 0">Keine Bilder gefunden.</p>
+{% endif %}
+
+<div id="lightbox" class="lightbox">
+    <div class="lightbox-overlay" onclick="schliesseLichtbox()"></div>
+    <button class="lightbox-close" onclick="schliesseLichtbox()" title="Schließen">×</button>
+    <button class="lightbox-nav lightbox-prev" onclick="navigiereLichtbox(-1)">‹</button>
+    <div class="lightbox-content" onclick="schliesseLichtbox()">
+        <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
+        <video id="lightbox-video" controls onclick="event.stopPropagation()"></video>
+    </div>
+    <button class="lightbox-nav lightbox-next" onclick="navigiereLichtbox(1)">›</button>
+    <div id="lb-progress-bar" class="lb-progress-bar">
+        <div id="lb-progress-fill" class="lb-progress-fill"></div>
+    </div>
+    <div class="lightbox-footer">
+        <span class="lightbox-zaehler" id="lightbox-zaehler"></span>
+        <div class="lightbox-meta">
+            <span class="lightbox-meta-datum" id="lightbox-datum"></span>
+            <span class="lightbox-meta-beschreibung" id="lightbox-beschreibung"></span>
+            <a class="lightbox-meta-ereignis" id="lightbox-ereignis" href="#"></a>
+        </div>
+        <div class="lb-diashow-controls">
+            <select id="lb-interval" class="lb-interval-select" title="Anzeigedauer">
+                <option value="3000">3s</option>
+                <option value="5000" selected>5s</option>
+                <option value="10000">10s</option>
+                <option value="20000">20s</option>
+            </select>
+            <button class="lightbox-fullscreen-btn" onclick="toggleDiashow()" id="lb-play-btn" title="Diashow abspielen">
+                <svg id="lb-play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+        </div>
+        <button class="lightbox-fullscreen-btn" onclick="toggleFullscreen()" title="Vollbild" id="lb-fs-btn">
+            <svg id="lb-fs-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+    </div>
+</div>
+
+<form id="download-form" method="POST" action="{{ url_for('diashow_download') }}" style="display:none"></form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const alleTags = {{ alle_tags | map(attribute='tag') | list | tojson }};
+document.querySelectorAll('.tag-eingabe').forEach(el => new TagEingabe(el, alleTags));
+
+// Datum-Schnellwahl initialisieren
+(function() {
+    const von = '{{ von }}', bis = '{{ bis }}';
+    const mv = von.match(/^(\d{4})-(\d{2})/);
+    const mb = bis.match(/^(\d{4})-(\d{2})/);
+    if (mv) { document.getElementById('ds-von-jahr').value = mv[1]; document.getElementById('ds-von-monat').value = mv[2]; }
+    if (mb) { document.getElementById('ds-bis-jahr').value = mb[1]; document.getElementById('ds-bis-monat').value = mb[2]; }
+})();
+function datumWahl() {
+    const vonJahr = document.getElementById('ds-von-jahr').value;
+    const vonMonat = document.getElementById('ds-von-monat').value;
+    const bisJahr = document.getElementById('ds-bis-jahr').value;
+    const bisMonat = document.getElementById('ds-bis-monat').value;
+    let von = '', bis = '';
+    if (vonJahr) {
+        const m = vonMonat || '01';
+        von = `${vonJahr}-${m}-01`;
+    }
+    if (bisJahr) {
+        const m = bisMonat || '12';
+        bis = `${bisJahr}-${m}-${String(new Date(+bisJahr, +m, 0).getDate()).padStart(2,'0')}`;
+    }
+    document.getElementById('ds-von').value = von;
+    document.getElementById('ds-bis').value = bis;
+    document.getElementById('filter-form').submit();
+}
+
+const bilderDaten = [
+    {% for bild in bilder %}
+    {
+        src: "{{ url_for('static', filename='uploads/' + bild.dateiname) }}",
+        alt: "{{ bild.beschreibung | replace('"', '\\"') }}",
+        istVideo: {{ 'true' if bild.dateiname | ist_video else 'false' }},
+        datum: "{{ bild.datum }}",
+        beschreibung: "{{ bild.beschreibung | replace('"', '\\"') }}",
+        ereignisTitel: "{{ (bild.ereignis_titel or '') | replace('"', '\\"') }}",
+        ereignisUrl: "{% if bild.ereignis_id %}{{ url_for('ereignis_bearbeiten', eid=bild.ereignis_id) }}{% endif %}"
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
+let aktuellerIndex = 0;
+
+function zeigeInLichtbox(index) {
+    const m = bilderDaten[index];
+    const img = document.getElementById('lightbox-img');
+    const video = document.getElementById('lightbox-video');
+    if (m.istVideo) {
+        img.style.display = 'none';
+        video.style.display = 'block';
+        video.src = m.src;
+        video.play();
+    } else {
+        video.pause();
+        video.style.display = 'none';
+        video.src = '';
+        img.style.display = 'block';
+        img.src = m.src;
+        img.alt = m.alt;
+    }
+    document.getElementById('lightbox-zaehler').textContent = (index + 1) + ' / ' + bilderDaten.length;
+    document.getElementById('lightbox-datum').textContent = m.datum || '';
+    document.getElementById('lightbox-beschreibung').textContent = m.beschreibung || '';
+    const link = document.getElementById('lightbox-ereignis');
+    if (m.ereignisTitel && m.ereignisUrl) {
+        link.textContent = m.ereignisTitel;
+        link.href = m.ereignisUrl;
+        link.style.display = '';
+    } else {
+        link.style.display = 'none';
+    }
+}
+function oeffneLichtbox(index) {
+    aktuellerIndex = index;
+    zeigeInLichtbox(index);
+    const lb = document.getElementById('lightbox');
+    lb.classList.add('aktiv');
+    document.body.style.overflow = 'hidden';
+}
+function schliesseLichtbox() {
+    diaschowStoppen();
+    document.getElementById('lightbox').classList.remove('aktiv');
+    document.body.style.overflow = '';
+    const video = document.getElementById('lightbox-video');
+    video.pause();
+    video.src = '';
+    if (document.fullscreenElement) document.exitFullscreen();
+}
+
+// ── Übergänge ────────────────────────────────────────────────────────────────
+let lbTransitioning = false;
+function navigiereLichtbox(richtung) {
+    if (lbTransitioning) return;
+    lbTransitioning = true;
+    if (diaschowAktiv) { clearTimeout(diaschowTimer); stopProgressBar(); }
+    const img = document.getElementById('lightbox-img');
+    const video = document.getElementById('lightbox-video');
+    const outEl = img.style.display !== 'none' ? img : video;
+    outEl.style.transition = 'opacity 0.15s ease, transform 0.15s ease';
+    outEl.style.opacity = '0';
+    outEl.style.transform = richtung > 0 ? 'translateX(-50px)' : 'translateX(50px)';
+    setTimeout(() => {
+        [img, video].forEach(el => {
+            el.style.transition = '';
+            el.style.opacity = '';
+            el.style.transform = '';
+            el.classList.remove('lb-slide-in-right', 'lb-slide-in-left');
+        });
+        aktuellerIndex = (aktuellerIndex + richtung + bilderDaten.length) % bilderDaten.length;
+        zeigeInLichtbox(aktuellerIndex);
+        const inEl = bilderDaten[aktuellerIndex].istVideo ? video : img;
+        inEl.classList.add(richtung > 0 ? 'lb-slide-in-right' : 'lb-slide-in-left');
+        setTimeout(() => {
+            inEl.classList.remove('lb-slide-in-right', 'lb-slide-in-left');
+            lbTransitioning = false;
+            if (diaschowAktiv) diaschowNaechsterTimer();
+        }, 280);
+    }, 150);
+}
+
+// ── Diashow ──────────────────────────────────────────────────────────────────
+let diaschowAktiv = false;
+let diaschowTimer = null;
+const PLAY_ICON  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+const PAUSE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+
+function startDiashow(startIndex) {
+    oeffneLichtbox(startIndex);
+    document.getElementById('lightbox').requestFullscreen().catch(() => {});
+    diaschowAktiv = true;
+    document.getElementById('lb-play-icon').innerHTML = PAUSE_ICON;
+    diaschowNaechsterTimer();
+}
+function toggleDiashow() {
+    if (diaschowAktiv) {
+        diaschowStoppen();
+    } else {
+        diaschowAktiv = true;
+        document.getElementById('lb-play-icon').innerHTML = PAUSE_ICON;
+        diaschowNaechsterTimer();
+    }
+}
+function diaschowStoppen() {
+    diaschowAktiv = false;
+    clearTimeout(diaschowTimer);
+    stopProgressBar();
+    document.getElementById('lb-play-icon').innerHTML = PLAY_ICON;
+}
+function diaschowNaechsterTimer() {
+    const intervall = parseInt(document.getElementById('lb-interval').value, 10);
+    startProgressBar(intervall);
+    diaschowTimer = setTimeout(() => navigiereLichtbox(1), intervall);
+}
+function startProgressBar(dauer) {
+    const fill = document.getElementById('lb-progress-fill');
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        fill.style.transition = `width ${dauer}ms linear`;
+        fill.style.width = '100%';
+    }));
+}
+function stopProgressBar() {
+    const fill = document.getElementById('lb-progress-fill');
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+}
+
+// ── Vollbild ─────────────────────────────────────────────────────────────────
+const FS_ENTER = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+const FS_EXIT  = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.getElementById('lightbox').requestFullscreen().catch(() => {});
+    } else {
+        document.exitFullscreen();
+    }
+}
+document.addEventListener('fullscreenchange', () => {
+    document.getElementById('lb-fs-icon').innerHTML = document.fullscreenElement ? FS_EXIT : FS_ENTER;
+    if (!document.fullscreenElement && diaschowAktiv) diaschowStoppen();
+});
+
+document.addEventListener('keydown', e => {
+    const lb = document.getElementById('lightbox');
+    if (!lb.classList.contains('aktiv')) return;
+    if (e.key === 'Escape') schliesseLichtbox();
+    if (e.key === 'ArrowLeft') navigiereLichtbox(-1);
+    if (e.key === 'ArrowRight') navigiereLichtbox(1);
+    if (e.key === ' ') { e.preventDefault(); toggleDiashow(); }
+    if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+});
+
+// Swipe
+let touchStartX = 0;
+document.getElementById('lightbox').addEventListener('touchstart', e => {
+    touchStartX = e.changedTouches[0].clientX;
+}, { passive: true });
+document.getElementById('lightbox').addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 50) navigiereLichtbox(dx < 0 ? 1 : -1);
+}, { passive: true });
+
+// Tag-Chips: Radio-Deselect per Klick
+document.querySelectorAll('#tag-chips input[type="radio"]').forEach(radio => {
+    radio.addEventListener('mousedown', function() {
+        this._vorher = this.checked;
+    });
+    radio.addEventListener('click', function() {
+        if (this._vorher) {
+            this.checked = false;
+        }
+        document.getElementById('filter-form').submit();
+    });
+});
+
+// Auswahl / Download
+function aktualisiereAuswahl() {
+    const alle = document.querySelectorAll('.bild-checkbox');
+    const checked = document.querySelectorAll('.bild-checkbox:checked');
+    const alleBox = document.getElementById('alle-auswaehlen');
+    if (!alleBox) return;
+    document.getElementById('ausgewaehlt-zaehler').textContent = checked.length + ' ausgewählt';
+    document.getElementById('download-btn').disabled = checked.length === 0;
+    alleBox.checked = alle.length > 0 && checked.length === alle.length;
+    alleBox.indeterminate = checked.length > 0 && checked.length < alle.length;
+}
+const alleBox = document.getElementById('alle-auswaehlen');
+if (alleBox) {
+    alleBox.addEventListener('change', function() {
+        document.querySelectorAll('.bild-checkbox').forEach(cb => cb.checked = this.checked);
+        aktualisiereAuswahl();
+    });
+}
+document.querySelectorAll('.bild-checkbox').forEach(cb => cb.addEventListener('change', aktualisiereAuswahl));
+
+function downloadZip() {
+    const checked = document.querySelectorAll('.bild-checkbox:checked');
+    if (!checked.length) return;
+    const form = document.getElementById('download-form');
+    form.innerHTML = '';
+    checked.forEach(cb => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'bild_ids'; inp.value = cb.value;
+        form.appendChild(inp);
+    });
+    form.submit();
+}
+</script>
+{% endblock %}

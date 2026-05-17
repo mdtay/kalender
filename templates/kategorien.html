@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Kategorien{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Kategorien verwalten</h1>
+</div>
+
+<section class="card">
+    <h2>Neue Kategorie</h2>
+    <form method="POST" action="{{ url_for('kategorie_neu') }}" class="inline-form">
+        <input type="text" name="name" placeholder="Name (z.B. Urlaub)" required class="input">
+        <input type="color" name="farbe" value="#3b82f6" class="color-picker">
+        <button type="submit" class="btn btn-primary"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Hinzufügen</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Vorhandene Kategorien</h2>
+    {% if kategorien %}
+    <ul class="kategorie-liste">
+        {% for k in kategorien %}
+        <li class="kategorie-item">
+            <span class="farb-vorschau" style="background:{{ k.farbe }}"></span>
+            <form method="POST" action="{{ url_for('kategorie_bearbeiten', kid=k.id) }}" class="inline-form" style="flex:1">
+                <input type="text" name="name" value="{{ k.name }}" required class="input input-sm">
+                <input type="color" name="farbe" value="{{ k.farbe }}" class="color-picker">
+                <button type="submit" class="btn btn-sm" title="Speichern"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+            </form>
+            <form method="POST" action="{{ url_for('kategorie_loeschen', kid=k.id) }}"
+                  onsubmit="return confirm('Kategorie &quot;{{ k.name }}&quot; löschen?')">
+                <button type="submit" class="btn btn-sm btn-danger" title="Löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="hint">Noch keine Kategorien angelegt.</p>
+    {% endif %}
+</section>
+{% endblock %}
