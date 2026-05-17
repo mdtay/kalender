@@ -20,7 +20,6 @@
     <ul class="kategorie-liste">
         {% for k in kategorien %}
         <li class="kategorie-item">
-            <span class="farb-vorschau" style="background:{{ k.farbe }}"></span>
             <form method="POST" action="{{ url_for('kategorie_bearbeiten', kid=k.id) }}" class="inline-form" style="flex:1">
                 <input type="text" name="name" value="{{ k.name }}" required class="input input-sm">
                 <input type="color" name="farbe" value="{{ k.farbe }}" class="color-picker">
