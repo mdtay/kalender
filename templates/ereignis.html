@@ -85,11 +85,9 @@
           enctype="multipart/form-data" class="upload-form">
         <label class="file-input-label">
             <input type="file" name="bilder" multiple accept="image/*,video/*" class="file-input-hidden"
-                   id="bilder-input" onchange="zeigeDateiname(this)">
-            <span class="file-input-btn btn btn-ghost">📎 Dateien auswählen</span>
-            <span class="file-input-info" id="datei-info">Keine Dateien ausgewählt</span>
+                   id="bilder-input" onchange="this.form.submit()">
+            <span class="file-input-btn btn btn-ghost"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Bilder hochladen</span>
         </label>
-        <button type="submit" id="hochladen-btn" class="btn btn-primary" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Hochladen</button>
     </form>
 </section>
 
@@ -117,6 +115,12 @@
                      alt="{{ bild.beschreibung }}"
                      onclick="oeffneLichtbox({{ loop.index0 }})" class="bild-thumb">
                 {% endif %}
+                {% if not bild.dateiname | ist_video %}
+                <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}"
+                      class="bild-loeschen-form bild-drehen-form">
+                    <button type="submit" class="bild-loeschen-btn" title="90° drehen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+                </form>
+                {% endif %}
                 <form method="POST" action="{{ url_for('bild_loesen', bild_id=bild.id) }}"
                       onsubmit="return confirm('Bild vom Ereignis lösen? Es bleibt in der Galerie erhalten.')"
                       class="bild-loeschen-form">
@@ -141,33 +145,26 @@
                     {% set fav = alle_personen | selectattr('favorit') | list %}
                     {% set rest = alle_personen | rejectattr('favorit') | list %}
                     <p class="label-klein">Personen:</p>
-                    <div class="personen-checkboxen">
+                    <div class="personen-checkboxen personen-checkboxen-mini">
                         {% for p in fav %}
-                        <label class="personen-chip">
+                        <label class="personen-chip" title="{{ p.name }}">
                             <input type="checkbox" name="personen" value="{{ p.id }}"
                                 {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
                             <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
-                            {{ p.name }}
                         </label>
                         {% endfor %}
+                        {% if rest %}
+                        {% set ns2 = namespace(offen=false) %}
+                        {% for p in rest %}{% if p.id in bild_personen.get(bild.id, []) %}{% set ns2.offen = true %}{% endif %}{% endfor %}
+                        {% for p in rest %}
+                        <label class="personen-chip" title="{{ p.name }}">
+                            <input type="checkbox" name="personen" value="{{ p.id }}"
+                                {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
+                            <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                        </label>
+                        {% endfor %}
+                        {% endif %}
                     </div>
-                    {% if rest %}
-                    {% set ns2 = namespace(offen=false) %}
-                    {% for p in rest %}{% if p.id in bild_personen.get(bild.id, []) %}{% set ns2.offen = true %}{% endif %}{% endfor %}
-                    <details class="weitere-personen-details" {% if ns2.offen %}open{% endif %}>
-                        <summary>Weitere ({{ rest | length }})</summary>
-                        <div class="personen-checkboxen" style="margin-top:0.5rem">
-                            {% for p in rest %}
-                            <label class="personen-chip">
-                                <input type="checkbox" name="personen" value="{{ p.id }}"
-                                    {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
-                                <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
-                                {{ p.name }}
-                            </label>
-                            {% endfor %}
-                        </div>
-                    </details>
-                    {% endif %}
                     {% endif %}
 
                     <input type="text" name="personen_neu"

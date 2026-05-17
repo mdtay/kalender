@@ -626,7 +626,7 @@ def bilder_hochladen(eid):
                 )
         conn.commit()
     conn.close()
-    return redirect(url_for('ereignis_bearbeiten', eid=eid))
+    return redirect(url_for('ereignis_bearbeiten', eid=eid) + '#bilder')
 
 
 # ── Ereignis löschen ───────────────────────────────────────────────────────────
@@ -719,6 +719,21 @@ def bild_loesen(bild_id):
 
 
 # ── Bild löschen ───────────────────────────────────────────────────────────────
+
+@app.route('/bild/<int:bild_id>/drehen', methods=['POST'])
+@login_required
+def bild_drehen(bild_id):
+    conn = get_db()
+    bild = conn.execute("SELECT * FROM bilder WHERE id=?", (bild_id,)).fetchone()
+    if bild and PILLOW and not ist_video(bild['dateiname']):
+        path = os.path.join(app.config['UPLOAD_FOLDER'], bild['dateiname'])
+        if os.path.exists(path):
+            img = PILImage.open(path)
+            img = img.rotate(-90, expand=True)
+            img.save(path)
+    conn.close()
+    return redirect(request.referrer or url_for('ereignis_bearbeiten', eid=bild['ereignis_id']))
+
 
 @app.route('/bild/<int:bild_id>/loeschen', methods=['POST'])
 @login_required

@@ -180,6 +180,8 @@ body > main {
     font-size: 0.9rem;
     font-family: inherit;
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     outline: none;
     transition: border-color 0.2s;
 }
@@ -234,6 +236,8 @@ textarea { resize: vertical; }
     user-select: none;
 }
 .personen-chip input { display: none; }
+.personen-checkboxen-mini .personen-chip { padding: 2px; border-radius: 50%; gap: 0; }
+.bild-drehen-form { position: absolute; top: 4px; left: 4px; }
 .personen-chip:has(input:checked) {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 28%, var(--surface2));
@@ -1487,7 +1491,7 @@ textarea { resize: vertical; }
 @media (max-width: 640px) {
 
     /* Container & Cards */
-    .container { padding: 0.75rem 0.75rem 0; }
+    .container { padding: 0.75rem 0.75rem 1.5rem; }
     .card { padding: 1rem; margin-bottom: 0.75rem; }
 
     /* Buttons — Touch-freundlich (mind. 44px) */
