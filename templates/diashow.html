@@ -222,9 +222,9 @@
                         {% endfor %}
                     </div>
                     {% if rest %}
-                    {% set ns = namespace(rest_checked=false) %}
-                    {% for p in rest %}{% if p.id in bild_personen.get(bild.id, []) %}{% set ns.rest_checked = true %}{% endif %}{% endfor %}
-                    <details class="personen-rest-akkordeon" {% if ns.rest_checked %}open{% endif %}>
+                    {% set pns = namespace(rest_checked=false) %}
+                    {% for p in rest %}{% if p.id in bild_personen.get(bild.id, []) %}{% set pns.rest_checked = true %}{% endif %}{% endfor %}
+                    <details class="personen-rest-akkordeon" {% if pns.rest_checked %}open{% endif %}>
                         <summary>Weitere</summary>
                         <div class="personen-checkboxen personen-checkboxen-mini">
                             {% for p in rest %}
