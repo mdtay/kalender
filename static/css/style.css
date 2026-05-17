@@ -359,7 +359,7 @@ textarea { resize: vertical; }
 }
 .chip-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-/* Bilder-Grid */
+/* Bilder-Grid (Galerie, Diashow) */
 .bilder-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -367,67 +367,95 @@ textarea { resize: vertical; }
 }
 .bilder-grid-klein { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 
+/* Bilder-Liste (Ereignis-Seite) */
+.bilder-sektion-kopf {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+.bilder-sektion-kopf h2 { margin: 0; }
+.bilder-liste {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
 .bild-karte {
+    display: flex;
+    flex-direction: row;
     background: var(--surface2);
     border-radius: var(--radius);
     overflow: hidden;
     border: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
+    transition: box-shadow 0.18s, border-color 0.18s;
+    min-height: 150px;
+}
+.bild-karte:hover {
+    box-shadow: 0 4px 18px rgba(0,0,0,0.13);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 .bild-thumb-wrapper {
     position: relative;
+    width: 180px;
+    flex-shrink: 0;
+    overflow: hidden;
+    cursor: zoom-in;
 }
 .bild-thumb {
     width: 100%;
-    height: 160px;
+    height: 100%;
+    min-height: 150px;
     object-fit: cover;
-    cursor: zoom-in;
     display: block;
+    transition: transform 0.22s ease;
 }
-.bild-loeschen-form {
+.bild-thumb-wrapper:hover .bild-thumb { transform: scale(1.04); }
+.bild-zoom-overlay {
     position: absolute;
-    top: 0.4rem;
-    left: 0.4rem;
-}
-.bild-loeschen-form-rechts {
-    left: 2.4rem;
-}
-.bild-loesen-btn {
-    background: rgba(100, 116, 139, 0.85);
-    font-size: 0.7rem;
-}
-.bild-loeschen-btn {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(239,68,68,0.85);
-    color: #fff;
-    font-size: 0.8rem;
-    cursor: pointer;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: rgba(0,0,0,0.28);
+    color: #fff;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity 0.18s;
 }
-.bild-thumb-wrapper:hover .bild-loeschen-btn { opacity: 1; }
+.bild-thumb-wrapper:hover .bild-zoom-overlay { opacity: 1; }
+.bild-info {
+    flex: 1;
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.bild-info form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 0.45rem;
+}
+.bild-personen-zeile {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.bild-aktionen {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: auto;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+}
+.bild-aktionen-spacer { flex: 1; }
 
-/* Touch-Geräte: Buttons immer sichtbar und größer */
+/* Touch-Geräte */
 @media (hover: none) {
-    .bild-loeschen-btn {
-        opacity: 1;
-        width: 36px;
-        height: 36px;
-        font-size: 0.95rem;
-    }
-    .bild-loeschen-form-rechts { left: 2.8rem; }
     .file-input-btn { min-height: 44px; }
+    .bild-zoom-overlay { display: none; }
 }
-.bild-info { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.4rem; flex: 1; }
-.bild-info form { display: flex; flex-direction: column; flex: 1; gap: 0.4rem; }
-.bild-info form .btn { margin-top: auto; align-self: flex-start; }
 
 .bild-ergebnis {
     position: relative;
@@ -943,6 +971,8 @@ textarea { resize: vertical; }
     display: flex;
     flex-direction: column;
     align-items: center;
+    height: 100%;
+    min-height: 150px;
     justify-content: center;
     background: #111;
     color: rgba(255,255,255,0.6);
@@ -954,7 +984,6 @@ textarea { resize: vertical; }
     letter-spacing: 0.03em;
     cursor: pointer;
     width: 100%;
-    height: 160px;
 }
 .video-placeholder:hover { color: #fff; background: #1c1c1c; }
 
@@ -1550,10 +1579,13 @@ textarea { resize: vertical; }
     .suche-form { flex-direction: column; }
     .suche-form .input { width: 100%; }
 
-    /* Bilder-Grid (Ereignis-Seite) */
+    /* Bilder-Karte (Ereignis-Seite) — auf Mobile stacken */
+    .bild-karte { flex-direction: column; min-height: 0; }
+    .bild-thumb-wrapper { width: 100%; }
+    .bild-thumb { min-height: 200px; height: 200px; }
+    .video-placeholder { height: 200px; }
+    .bild-zoom-overlay { display: none; }
     .bilder-grid { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
-    .bild-thumb { height: 130px; }
-    .video-placeholder { height: 130px; }
 
     /* Chips */
     .kategorie-chip { font-size: 0.82rem; padding: 0.4rem 0.65rem; }
