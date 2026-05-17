@@ -12,7 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 try:
-    from PIL import Image as PILImage
+    from PIL import Image as PILImage, ImageOps
     try:
         import pillow_heif
         pillow_heif.register_heif_opener()
@@ -302,6 +302,7 @@ def bild_speichern(file):
     if PILLOW:
         try:
             img = PILImage.open(io.BytesIO(data))
+            img = ImageOps.exif_transpose(img)
             if img.width > IMAGE_MAX_PX or img.height > IMAGE_MAX_PX:
                 img.thumbnail((IMAGE_MAX_PX, IMAGE_MAX_PX), PILImage.LANCZOS)
             if ext.lower() in {'.jpg', '.jpeg'} and img.mode != 'RGB':
