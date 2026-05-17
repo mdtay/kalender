@@ -85,14 +85,21 @@
           enctype="multipart/form-data" class="upload-form">
         <label class="file-input-label">
             <input type="file" name="bilder" multiple accept="image/*,video/*" class="file-input-hidden"
-                   id="bilder-input" onchange="this.form.submit()">
-            <span class="file-input-btn btn btn-ghost"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Bilder hochladen</span>
+                   id="bilder-input" onchange="zeigeUploadVorschau(this)">
+            <span class="file-input-btn btn btn-ghost" id="auswaehlen-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Bilder auswählen</span>
         </label>
+        <div id="upload-vorschau" style="display:none">
+            <div class="upload-vorschau-grid" id="upload-vorschau-grid"></div>
+            <div style="display:flex;gap:0.75rem;margin-top:0.75rem;align-items:center;flex-wrap:wrap">
+                <button type="submit" class="btn btn-primary"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Bilder hochladen</button>
+                <span id="upload-anzahl" class="hint"></span>
+            </div>
+        </div>
     </form>
 </section>
 
 {% if bilder %}
-<section class="card" style="margin-top:1.5rem">
+<section class="card" id="bilder" style="margin-top:1.5rem">
     <h2>Bilder ({{ bilder | length }})</h2>
     <div class="bilder-grid">
         {% for bild in bilder %}
@@ -301,19 +308,38 @@ document.getElementById('lightbox').addEventListener('touchend', e => {
     if (Math.abs(dx) > 50) navigiereLichtbox(dx < 0 ? 1 : -1);
 }, { passive: true });
 
-function zeigeDateiname(input) {
-    const info = document.getElementById('datei-info');
-    const btn = document.getElementById('hochladen-btn');
+function zeigeUploadVorschau(input) {
+    const vorschau = document.getElementById('upload-vorschau');
+    const grid = document.getElementById('upload-vorschau-grid');
+    const anzahl = document.getElementById('upload-anzahl');
+    grid.innerHTML = '';
     if (input.files.length === 0) {
-        info.textContent = 'Keine Dateien ausgewählt';
-        btn.style.display = 'none';
-    } else if (input.files.length === 1) {
-        info.textContent = input.files[0].name;
-        btn.style.display = '';
-    } else {
-        info.textContent = input.files.length + ' Dateien ausgewählt';
-        btn.style.display = '';
+        vorschau.style.display = 'none';
+        return;
     }
+    vorschau.style.display = 'block';
+    const n = input.files.length;
+    anzahl.textContent = n === 1 ? '1 Datei ausgewählt' : n + ' Dateien ausgewählt';
+    Array.from(input.files).forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'upload-vorschau-item';
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                const img = document.createElement('img');
+                img.src = e.target.result;
+                img.className = 'upload-vorschau-img';
+                item.appendChild(img);
+            };
+            reader.readAsDataURL(file);
+        } else {
+            const ph = document.createElement('div');
+            ph.className = 'upload-vorschau-video-ph';
+            ph.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+            item.appendChild(ph);
+        }
+        grid.appendChild(item);
+    });
 }
 </script>
 {% endblock %}
