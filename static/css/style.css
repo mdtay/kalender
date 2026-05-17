@@ -297,6 +297,27 @@ textarea { resize: vertical; }
 }
 .bild-meta-akkordeon[open] > summary::before { transform: rotate(90deg); }
 .bild-meta-felder { display: flex; flex-direction: column; gap: 0.4rem; padding-top: 0.3rem; }
+.personen-rest-akkordeon { margin-top: 0.15rem; }
+.personen-rest-akkordeon > summary {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0;
+    user-select: none;
+}
+.personen-rest-akkordeon > summary::before {
+    content: '›';
+    display: inline-block;
+    transition: transform 0.15s;
+    font-size: 0.85rem;
+    line-height: 1;
+}
+.personen-rest-akkordeon[open] > summary::before { transform: rotate(90deg); }
+.personen-rest-akkordeon > .personen-checkboxen-mini { margin-top: 0.25rem; }
 .personen-chip:has(input:checked) {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 28%, var(--surface2));
