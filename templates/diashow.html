@@ -178,10 +178,16 @@
                     <input type="hidden" name="next" value="{{ request.url }}">
                     <button type="submit" class="bild-loeschen-btn" title="Löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                 </form>
+                {% if not bild.dateiname | ist_video %}
+                <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}"
+                      class="bild-loeschen-form bild-loeschen-form-rechts">
+                    <button type="submit" class="bild-loeschen-btn bild-loesen-btn" title="90° drehen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+                </form>
+                {% endif %}
             </div>
             <div class="bild-info">
                 <div class="galerie-meta" style="margin-bottom:0.4rem">
-                    <span class="galerie-datum">{{ bild.datum | datum_kurz }}</span>
+                    <a href="{{ url_for('tag', datum=bild.datum) }}" class="galerie-datum">{{ bild.datum | datum_kurz }}</a>
                     {% if event_kategorien.get(bild.ereignis_id) %}
                     <span class="galerie-kat-punkte">
                         {% for kat in event_kategorien[bild.ereignis_id] %}

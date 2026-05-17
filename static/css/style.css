@@ -1232,7 +1232,8 @@ textarea { resize: vertical; }
     justify-content: space-between;
     gap: 0.4rem;
 }
-.galerie-datum { font-size: 0.72rem; color: var(--text-muted); }
+.galerie-datum { font-size: 0.72rem; color: var(--text-muted); text-decoration: none; }
+.galerie-datum:hover { color: var(--accent); text-decoration: underline; }
 .galerie-kat-punkte { display: flex; gap: 3px; align-items: center; }
 .galerie-beschreibung {
     font-size: 0.8rem;
