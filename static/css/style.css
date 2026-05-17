@@ -393,6 +393,9 @@ textarea { resize: vertical; }
 .bild-loeschen-form-rechts {
     left: 2.4rem;
 }
+.bild-loeschen-form-drehen {
+    left: 4.4rem;
+}
 .bild-loesen-btn {
     background: rgba(100, 116, 139, 0.85);
     font-size: 0.7rem;
@@ -423,6 +426,7 @@ textarea { resize: vertical; }
         font-size: 0.95rem;
     }
     .bild-loeschen-form-rechts { left: 2.8rem; }
+    .bild-loeschen-form-drehen { left: 5.2rem; }
     .file-input-btn { min-height: 44px; }
 }
 .bild-info { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.4rem; flex: 1; }

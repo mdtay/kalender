@@ -126,6 +126,12 @@
                       class="bild-loeschen-form bild-loeschen-form-rechts">
                     <button type="submit" class="bild-loeschen-btn" title="Bild löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                 </form>
+                {% if not bild.dateiname | ist_video %}
+                <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}"
+                      class="bild-loeschen-form bild-loeschen-form-drehen">
+                    <button type="submit" class="bild-loeschen-btn bild-loesen-btn" title="90° drehen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+                </form>
+                {% endif %}
             </div>
             <div class="bild-info">
                 <form method="POST" action="{{ url_for('bild_meta', bild_id=bild.id) }}">
@@ -149,17 +155,10 @@
                         {% endfor %}
                     </div>
                     {% endif %}
-                    <input type="text" name="personen_neu"
-                           placeholder="Neue Person (kommagetrennt)" class="input-small">
                     <div class="bild-aktionen-zeile">
                         <button type="submit" class="btn btn-sm">Speichern</button>
                     </div>
                 </form>
-                {% if not bild.dateiname | ist_video %}
-                <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}" class="bild-drehen-form-info">
-                    <button type="submit" class="btn btn-sm btn-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Drehen</button>
-                </form>
-                {% endif %}
             </div>
         </div>
         {% endfor %}
