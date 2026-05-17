@@ -1,0 +1,6 @@
+﻿kalender.db
+.secret_key
+__pycache__/
+static/uploads/
+*.pyc
+.claude/
