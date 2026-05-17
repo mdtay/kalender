@@ -79,47 +79,56 @@
     <button type="submit" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Speichern</button>
 </form>
 
-<section class="card bilder-sektion" style="margin-top:1.5rem" id="bilder">
-    <div class="bilder-sektion-kopf">
-        <h2>Bilder & Videos{% if bilder %} ({{ bilder | length }}){% endif %}</h2>
-        <form method="POST" action="{{ url_for('bilder_hochladen', eid=e.id) }}"
-              enctype="multipart/form-data">
-            <label class="btn btn-ghost btn-sm">
-                <input type="file" name="bilder" multiple accept="image/*,video/*"
-                       class="file-input-hidden" onchange="this.form.submit()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
-                Hinzufügen
-            </label>
-        </form>
-    </div>
+<section class="card" style="margin-top:1.5rem">
+    <h2>Bilder & Videos hochladen</h2>
+    <form method="POST" action="{{ url_for('bilder_hochladen', eid=e.id) }}"
+          enctype="multipart/form-data" class="upload-form">
+        <label class="file-input-label">
+            <input type="file" name="bilder" multiple accept="image/*,video/*" class="file-input-hidden"
+                   id="bilder-input" onchange="this.form.submit()">
+            <span class="file-input-btn btn btn-ghost"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Bilder hochladen</span>
+        </label>
+    </form>
+</section>
 
-    {% if bilder %}
-    <div class="bilder-liste">
+{% if bilder %}
+<section class="card" style="margin-top:1.5rem">
+    <h2>Bilder ({{ bilder | length }})</h2>
+    <div class="bilder-grid">
         {% for bild in bilder %}
         <div class="bild-karte">
-            <div class="bild-thumb-wrapper" onclick="oeffneLichtbox({{ loop.index0 }})">
+            <div class="bild-thumb-wrapper">
                 {% if bild.dateiname | ist_video %}
                 {% if bild.thumbnail %}
                 <img src="{{ url_for('static', filename='uploads/' + bild.thumbnail) }}"
-                     alt="" class="bild-thumb">
+                     alt="{{ bild.beschreibung }}" class="bild-thumb"
+                     onclick="oeffneLichtbox({{ loop.index0 }})">
                 <span class="video-badge">▶ Video</span>
                 {% else %}
-                <div class="video-placeholder bild-thumb">
+                <div class="video-placeholder bild-thumb" onclick="oeffneLichtbox({{ loop.index0 }})">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                     Video
                 </div>
                 {% endif %}
                 {% else %}
                 <img src="{{ url_for('static', filename='uploads/' + bild.dateiname) }}"
-                     alt="" class="bild-thumb">
+                     alt="{{ bild.beschreibung }}"
+                     onclick="oeffneLichtbox({{ loop.index0 }})" class="bild-thumb">
                 {% endif %}
-                <div class="bild-zoom-overlay">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                </div>
+                <form method="POST" action="{{ url_for('bild_loesen', bild_id=bild.id) }}"
+                      onsubmit="return confirm('Bild vom Ereignis lösen? Es bleibt in der Galerie erhalten.')"
+                      class="bild-loeschen-form">
+                    <input type="hidden" name="next" value="{{ url_for('ereignis_bearbeiten', eid=e.id) }}">
+                    <button type="submit" class="bild-loeschen-btn bild-loesen-btn" title="Vom Ereignis lösen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg></button>
+                </form>
+                <form method="POST" action="{{ url_for('bild_loeschen', bild_id=bild.id) }}"
+                      onsubmit="return confirm('Bild wirklich löschen?')"
+                      class="bild-loeschen-form bild-loeschen-form-rechts">
+                    <button type="submit" class="bild-loeschen-btn" title="Bild löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                </form>
             </div>
             <div class="bild-info">
                 <form method="POST" action="{{ url_for('bild_meta', bild_id=bild.id) }}">
-                    <input type="hidden" name="next" value="{{ url_for('ereignis_bearbeiten', eid=e.id) }}">
                     <input type="text" name="beschreibung" value="{{ bild.beschreibung }}"
                            placeholder="Beschreibung..." class="input-small">
                     <div class="tag-eingabe" data-wert="{{ bild.tags or '' }}">
@@ -128,51 +137,35 @@
                     {% if alle_personen %}
                     {% set fav = alle_personen | selectattr('favorit') | list %}
                     {% set rest = alle_personen | rejectattr('favorit') | list %}
-                    <div class="bild-personen-zeile">
-                        <span class="label-klein">Personen</span>
-                        <div class="personen-checkboxen personen-checkboxen-mini">
-                            {% for p in fav + rest %}
-                            <label class="personen-chip {% if p.avatar %}chip-avatar-only{% endif %}" title="{{ p.name }}">
-                                <input type="checkbox" name="personen" value="{{ p.id }}"
-                                    {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
-                                <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
-                                {% if not p.avatar %}{{ p.name }}{% endif %}
-                            </label>
-                            {% endfor %}
-                        </div>
+                    <p class="label-klein">Personen:</p>
+                    <div class="personen-checkboxen personen-checkboxen-mini">
+                        {% for p in fav + rest %}
+                        <label class="personen-chip {% if p.avatar %}chip-avatar-only{% endif %}" title="{{ p.name }}">
+                            <input type="checkbox" name="personen" value="{{ p.id }}"
+                                {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
+                            <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                            {% if not p.avatar %}{{ p.name }}{% endif %}
+                        </label>
+                        {% endfor %}
                     </div>
                     {% endif %}
                     <input type="text" name="personen_neu"
-                           placeholder="Neue Person..." class="input-small">
-                    <div class="bild-aktionen">
+                           placeholder="Neue Person (kommagetrennt)" class="input-small">
+                    <div class="bild-aktionen-zeile">
                         <button type="submit" class="btn btn-sm">Speichern</button>
-                        {% if not bild.dateiname | ist_video %}
-                        <button type="submit" formaction="{{ url_for('bild_drehen', bild_id=bild.id) }}"
-                                class="btn btn-sm btn-ghost" title="90° drehen">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                        </button>
-                        {% endif %}
-                        <span class="bild-aktionen-spacer"></span>
-                        <button type="submit" formaction="{{ url_for('bild_loesen', bild_id=bild.id) }}"
-                                class="btn btn-sm btn-ghost" title="Vom Ereignis lösen"
-                                onclick="return confirm('Bild lösen? Es bleibt in der Galerie.')">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
-                        </button>
-                        <button type="submit" formaction="{{ url_for('bild_loeschen', bild_id=bild.id) }}"
-                                class="btn btn-sm btn-danger" title="Bild löschen"
-                                onclick="return confirm('Bild wirklich löschen?')">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
                     </div>
                 </form>
+                {% if not bild.dateiname | ist_video %}
+                <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}" class="bild-drehen-form-info">
+                    <button type="submit" class="btn btn-sm btn-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Drehen</button>
+                </form>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
     </div>
-    {% else %}
-    <p class="hint" style="margin-top:0.5rem">Noch keine Bilder hochgeladen.</p>
-    {% endif %}
 </section>
+{% endif %}
 
 <div id="lightbox" class="lightbox">
     <div class="lightbox-overlay" onclick="schliesseLichtbox()"></div>
