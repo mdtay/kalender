@@ -890,7 +890,7 @@ def person_favorit(pid):
 def suche():
     q = request.args.get('q', '').strip()
     tag_filter = request.args.get('tag', '').strip()
-    person_filter = request.args.get('person', '').strip()
+    personen_filter = request.args.getlist('personen')
     kategorie_filter = request.args.getlist('kategorien')
     von = request.args.get('von', '').strip()
     bis = request.args.get('bis', '').strip()
@@ -899,7 +899,7 @@ def suche():
     ergebnisse_ereignisse = []
     ergebnisse_bilder = []
 
-    if q or von or bis or kategorie_filter or person_filter:
+    if q or von or bis or kategorie_filter or personen_filter:
         sql = "SELECT * FROM ereignisse WHERE 1=1"
         p = []
         if q:
@@ -908,9 +908,9 @@ def suche():
         if kategorie_filter:
             sql += f" AND id IN (SELECT ereignis_id FROM ereignis_kategorien WHERE kategorie_id IN ({','.join('?' * len(kategorie_filter))}))"
             p.extend([int(k) for k in kategorie_filter])
-        if person_filter:
-            sql += " AND id IN (SELECT ep.ereignis_id FROM ereignis_personen ep JOIN personen per ON per.id=ep.person_id WHERE per.name=?)"
-            p.append(person_filter)
+        if personen_filter:
+            sql += f" AND id IN (SELECT ereignis_id FROM ereignis_personen WHERE person_id IN ({','.join('?' * len(personen_filter))}))"
+            p.extend([int(pid) for pid in personen_filter])
         if von:
             sql += " AND datum >= ?"
             p.append(von)
@@ -920,12 +920,11 @@ def suche():
         sql += " ORDER BY datum DESC"
         ergebnisse_ereignisse = conn.execute(sql, p).fetchall()
 
-    if q or tag_filter or person_filter or von or bis:
+    if q or tag_filter or personen_filter or von or bis:
         sql = """
             SELECT DISTINCT b.* FROM bilder b
             LEFT JOIN bild_tags bt ON bt.bild_id=b.id
             LEFT JOIN bild_personen bp ON bp.bild_id=b.id
-            LEFT JOIN personen p ON p.id=bp.person_id
             WHERE 1=1
         """
         p = []
@@ -935,9 +934,9 @@ def suche():
         if tag_filter:
             sql += " AND bt.tag LIKE ?"
             p.append(f'%{tag_filter}%')
-        if person_filter:
-            sql += " AND p.name LIKE ?"
-            p.append(f'%{person_filter}%')
+        if personen_filter:
+            sql += f" AND bp.person_id IN ({','.join('?' * len(personen_filter))})"
+            p.extend([int(pid) for pid in personen_filter])
         if von:
             sql += " AND b.datum >= ?"
             p.append(von)
@@ -953,7 +952,7 @@ def suche():
     conn.close()
 
     return render_template('suche.html',
-        q=q, tag_filter=tag_filter, person_filter=person_filter,
+        q=q, tag_filter=tag_filter, personen_filter=personen_filter,
         kategorie_filter=kategorie_filter, von=von, bis=bis,
         ergebnisse_ereignisse=ergebnisse_ereignisse,
         ergebnisse_bilder=ergebnisse_bilder,

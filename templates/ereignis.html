@@ -115,20 +115,14 @@
                      alt="{{ bild.beschreibung }}"
                      onclick="oeffneLichtbox({{ loop.index0 }})" class="bild-thumb">
                 {% endif %}
-                <form method="POST" action="{{ url_for('bild_loesen', bild_id=bild.id) }}"
-                      onsubmit="return confirm('Bild vom Ereignis lösen? Es bleibt in der Galerie erhalten.')"
-                      class="bild-loeschen-form">
-                    <input type="hidden" name="next" value="{{ url_for('ereignis_bearbeiten', eid=e.id) }}">
-                    <button type="submit" class="bild-loeschen-btn bild-loesen-btn" title="Vom Ereignis lösen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/><line x1="2" y1="2" x2="22" y2="22"/></svg></button>
-                </form>
                 <form method="POST" action="{{ url_for('bild_loeschen', bild_id=bild.id) }}"
                       onsubmit="return confirm('Bild wirklich löschen?')"
-                      class="bild-loeschen-form bild-loeschen-form-rechts">
+                      class="bild-loeschen-form">
                     <button type="submit" class="bild-loeschen-btn" title="Bild löschen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                 </form>
                 {% if not bild.dateiname | ist_video %}
                 <form method="POST" action="{{ url_for('bild_drehen', bild_id=bild.id) }}"
-                      class="bild-loeschen-form bild-loeschen-form-drehen">
+                      class="bild-loeschen-form bild-loeschen-form-rechts">
                     <button type="submit" class="bild-loeschen-btn bild-loesen-btn" title="90° drehen"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
                 </form>
                 {% endif %}

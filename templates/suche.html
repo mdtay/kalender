@@ -9,12 +9,6 @@
     <form method="GET" action="{{ url_for('suche') }}">
         <div class="suche-form">
             <input type="text" name="q" value="{{ q }}" placeholder="Text suchen..." class="input">
-            <select name="person" class="input">
-                <option value="">Alle Personen</option>
-                {% for p in alle_personen %}
-                <option value="{{ p.name }}" {% if person_filter == p.name %}selected{% endif %}>{{ p.name }}</option>
-                {% endfor %}
-            </select>
             <select name="tag" class="input">
                 <option value="">Alle Tags</option>
                 {% for t in alle_tags %}
@@ -44,9 +38,25 @@
         </div>
         {% endif %}
 
+        {% if alle_personen %}
+        <div class="filter-gruppe" style="margin-top:1rem">
+            <span class="filter-label">Personen</span>
+            <div class="personen-checkboxen" style="margin-top:0.4rem">
+                {% for p in alle_personen %}
+                <label class="personen-chip">
+                    <input type="checkbox" name="personen" value="{{ p.id }}"
+                        {% if p.id|string in personen_filter %}checked{% endif %}>
+                    <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
+                    {{ p.name }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <div style="display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap">
             <button type="submit" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Suchen</button>
-            {% if q or tag_filter or person_filter or kategorie_filter or von or bis %}
+            {% if q or tag_filter or personen_filter or kategorie_filter or von or bis %}
             <a href="{{ url_for('suche') }}" class="btn btn-ghost">Zurücksetzen</a>
             {% endif %}
         </div>
@@ -90,7 +100,7 @@
 </section>
 {% endif %}
 
-{% if q or tag_filter or person_filter or kategorie_filter or von or bis %}
+{% if q or tag_filter or personen_filter or kategorie_filter or von or bis %}
 {% if not ergebnisse_ereignisse and not ergebnisse_bilder %}
 <p class="hint">Keine Ergebnisse gefunden.</p>
 {% endif %}

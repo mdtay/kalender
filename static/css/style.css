@@ -237,7 +237,17 @@ textarea { resize: vertical; }
 }
 .personen-chip input { display: none; }
 .personen-checkboxen-mini .chip-avatar-only { padding: 2px; border-radius: 50%; gap: 0; }
-.bild-drehen-form-info { margin-top: 0.4rem; }
+.personen-checkboxen-mini .personen-chip {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.72rem;
+    gap: 0.25rem;
+    border-width: 1px;
+}
+.personen-checkboxen-mini .person-avatar-sm {
+    width: 16px;
+    height: 16px;
+    font-size: 0.6rem;
+}
 .personen-chip:has(input:checked) {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 28%, var(--surface2));
@@ -250,6 +260,15 @@ textarea { resize: vertical; }
     line-height: 1;
     opacity: 0.65;
     margin-left: 0.15rem;
+}
+.personen-checkboxen-mini .personen-chip:has(input:checked) {
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface2));
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    font-weight: normal;
+    color: var(--text);
+}
+.personen-checkboxen-mini .personen-chip:has(input:checked)::after {
+    display: none;
 }
 .person-avatar-sm {
     width: 20px;
