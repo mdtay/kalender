@@ -959,11 +959,12 @@ textarea { resize: vertical; }
 .kategorie-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex-wrap: nowrap;
+    overflow: hidden;
 }
 .farb-vorschau { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
-.kategorie-name { flex: 1; min-width: 120px; font-weight: 500; }
+.kategorie-name { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .person-avatar {
     width: 40px;
     height: 40px;
