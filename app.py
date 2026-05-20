@@ -5,6 +5,8 @@ import subprocess
 import zipfile
 import sqlite3
 import calendar
+import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime, date
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, send_file, session, flash
@@ -26,6 +28,19 @@ IMAGE_MAX_PX = 1920
 FFMPEG = shutil.which('ffmpeg') is not None
 
 app = Flask(__name__)
+
+# Logging: max 1 MB pro Datei, 4 Dateien → max 4 MB
+_log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+os.makedirs(_log_dir, exist_ok=True)
+_log_handler = RotatingFileHandler(
+    os.path.join(_log_dir, 'app.log'),
+    maxBytes=1_000_000,
+    backupCount=3,
+    encoding='utf-8',
+)
+_log_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
+app.logger.addHandler(_log_handler)
+app.logger.setLevel(logging.INFO)
 
 _SECRET_KEY_FILE = os.path.join(os.path.dirname(__file__), '.secret_key')
 if os.path.exists(_SECRET_KEY_FILE):
@@ -389,10 +404,11 @@ def monat(jahr, monat):
 
     conn = get_db()
 
-    # Kategorie-Farbpunkte — beide Filter berücksichtigen
+    # Kategorie-Farbpunkte — pro Ereignis gruppiert
+    # tage_daten[datum] = [[kats_ereignis1], [kats_ereignis2], ...]
     tage_daten = {}
     sql_dots = '''
-        SELECT e.datum, k.farbe, k.name
+        SELECT e.id, e.datum, k.farbe, k.name
         FROM ereignisse e
         JOIN ereignis_kategorien ek ON ek.ereignis_id = e.id
         JOIN kategorien k ON k.id = ek.kategorie_id
@@ -405,12 +421,26 @@ def monat(jahr, monat):
     if person_ids:
         sql_dots += f" AND e.id IN (SELECT ereignis_id FROM ereignis_personen WHERE person_id IN ({','.join('?' * len(person_ids))}))"
         params_dots += person_ids
+    event_kat_map = {}
     for row in conn.execute(sql_dots, params_dots).fetchall():
-        d = row['datum']
+        eid = row['id']
+        if eid not in event_kat_map:
+            event_kat_map[eid] = {'datum': row['datum'], 'kats': []}
+        event_kat_map[eid]['kats'].append({'farbe': row['farbe'], 'name': row['name']})
+    # Ereignisse ohne Kategorien (nur ohne aktiven Filter)
+    if not cat_ids and not person_ids:
+        for row in conn.execute(
+            "SELECT id, datum FROM ereignisse WHERE datum LIKE ? "
+            "AND id NOT IN (SELECT DISTINCT ereignis_id FROM ereignis_kategorien)",
+            [prefix]
+        ).fetchall():
+            if row['id'] not in event_kat_map:
+                event_kat_map[row['id']] = {'datum': row['datum'], 'kats': []}
+    for data in event_kat_map.values():
+        d = data['datum']
         if d not in tage_daten:
             tage_daten[d] = []
-        if not any(x['farbe'] == row['farbe'] for x in tage_daten[d]):
-            tage_daten[d].append({'farbe': row['farbe'], 'name': row['name']})
+        tage_daten[d].append(data['kats'])
 
     # Tage mit Einträgen berechnen (AND-Logik bei mehreren Filtern)
     tage_mit_eintrag = None  # None = noch kein Filter angewandt
@@ -613,18 +643,30 @@ def ereignis_bearbeiten(eid):
 @app.route('/ereignis/<int:eid>/bilder', methods=['POST'])
 @login_required
 def bilder_hochladen(eid):
+    upload_folder = app.config['UPLOAD_FOLDER']
+    if not os.path.isdir(upload_folder):
+        app.logger.error(
+            f"Upload fehlgeschlagen: '{upload_folder}' ist kein Verzeichnis "
+            f"(Laufwerk nicht gemountet?)"
+        )
+        flash("Speicherlaufwerk nicht erreichbar. Bitte prüfen ob die Festplatte angeschlossen ist.", "error")
+        return redirect(url_for('ereignis_bearbeiten', eid=eid))
+
     conn = get_db()
     e = conn.execute("SELECT * FROM ereignisse WHERE id=?", (eid,)).fetchone()
     if e:
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         for file in request.files.getlist('bilder'):
             if file and file.filename and allowed_file(file.filename):
-                filename = bild_speichern(file)
-                thumb = generate_video_thumbnail(filename) if ist_video(filename) else None
-                conn.execute(
-                    "INSERT INTO bilder (ereignis_id, datum, dateiname, thumbnail) VALUES (?,?,?,?)",
-                    (eid, e['datum'], filename, thumb)
-                )
+                try:
+                    filename = bild_speichern(file)
+                    thumb = generate_video_thumbnail(filename) if ist_video(filename) else None
+                    conn.execute(
+                        "INSERT INTO bilder (ereignis_id, datum, dateiname, thumbnail) VALUES (?,?,?,?)",
+                        (eid, e['datum'], filename, thumb)
+                    )
+                    app.logger.info(f"Bild hochgeladen: {filename} (Ereignis {eid})")
+                except Exception as exc:
+                    app.logger.error(f"Fehler beim Hochladen von '{file.filename}': {exc}")
         conn.commit()
     conn.close()
     return redirect(url_for('ereignis_bearbeiten', eid=eid) + '#bilder')

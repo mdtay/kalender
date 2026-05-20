@@ -116,6 +116,22 @@ body > main {
 .page-header h1 { font-size: 1.6rem; }
 
 /* Cards */
+.flash-nachricht {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+.flash-error {
+    background: color-mix(in srgb, #ef4444 15%, var(--surface));
+    border: 1px solid color-mix(in srgb, #ef4444 40%, var(--border));
+    color: var(--text);
+}
+.flash-info, .flash-message {
+    background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+    color: var(--text);
+}
 .card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -412,6 +428,7 @@ textarea { resize: vertical; }
 .farb-punkte { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
 .punkt { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .kuchendiagramm-kreis { width: 12px; height: 12px; }
+.neutral-kreis { background: transparent !important; border: 1.5px dashed var(--text-muted); opacity: 0.5; }
 
 .farb-streifen { display: flex; gap: 2px; margin-top: 4px; height: 4px; }
 .streifen { flex: 1; border-radius: 2px; }

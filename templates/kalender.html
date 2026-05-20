@@ -30,32 +30,35 @@
                         {% else %}
                             {% set datum_str = '%04d-%02d-%02d' | format(jahr, monat, tag_num) %}
                             {% set ist_heute = datum_str == heute %}
-                            {% set kategorien_liste = tage_daten.get(datum_str, []) %}
+                            {% set ereignis_listen = tage_daten.get(datum_str, []) %}
                             {% set hat_eintrag = datum_str in tage_mit_eintrag %}
+                            {% set erste_farbe = ereignis_listen[0][0].farbe if ereignis_listen and ereignis_listen[0] else '' %}
                             <td class="tag-zelle {% if ist_heute %}heute{% endif %} {% if hat_eintrag %}hat-eintrag{% endif %} {% if kategorie_filter and not hat_eintrag %}gedimmt{% endif %}"
-                                {% if darstellung == 'hintergrund' and kategorien_liste %}
-                                data-hintergrund="{{ kategorien_liste[0].farbe }}22"
+                                {% if darstellung == 'hintergrund' and erste_farbe %}
+                                data-hintergrund="{{ erste_farbe }}22"
                                 {% endif %}>
                                 <a href="{{ url_for('tag', datum=datum_str) }}" class="tag-link">
                                     <span class="tag-nummer">{{ tag_num }}</span>
-                                    {% if kategorien_liste %}
-                                        {% if darstellung == 'punkte' %}
+                                    {% if ereignis_listen %}
+                                        {% if darstellung == 'punkte' or darstellung == 'hintergrund' %}
                                         <div class="farb-punkte">
+                                            {% for kats in ereignis_listen %}
+                                            {% if kats %}
                                             <span class="punkt kuchendiagramm-kreis"
-                                                  style="background:{{ kategorien_liste | map(attribute='farbe') | list | kuchendiagramm }};"
-                                                  title="{{ kategorien_liste | map(attribute='name') | join(', ') }}"></span>
+                                                  style="background:{{ kats | map(attribute='farbe') | list | kuchendiagramm }};"
+                                                  title="{{ kats | map(attribute='name') | join(', ') }}"></span>
+                                            {% else %}
+                                            <span class="punkt kuchendiagramm-kreis neutral-kreis" title="Ohne Kategorie"></span>
+                                            {% endif %}
+                                            {% endfor %}
                                         </div>
                                         {% elif darstellung == 'streifen' %}
                                         <div class="farb-streifen">
-                                            {% for k in kategorien_liste %}
+                                            {% for kats in ereignis_listen %}
+                                            {% for k in kats %}
                                             <div class="streifen" style="background:{{ k.farbe }};" title="{{ k.name }}"></div>
                                             {% endfor %}
-                                        </div>
-                                        {% elif darstellung == 'hintergrund' %}
-                                        <div class="farb-punkte">
-                                            <span class="punkt kuchendiagramm-kreis"
-                                                  style="background:{{ kategorien_liste | map(attribute='farbe') | list | kuchendiagramm }};"
-                                                  title="{{ kategorien_liste | map(attribute='name') | join(', ') }}"></span>
+                                            {% endfor %}
                                         </div>
                                         {% endif %}
                                     {% endif %}
