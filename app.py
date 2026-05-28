@@ -596,7 +596,7 @@ def ereignis_bearbeiten(eid):
 
         conn.commit()
         conn.close()
-        return redirect(url_for('tag', datum=neues_datum))
+        return redirect(url_for('ereignis_bearbeiten', eid=eid))
 
     ausgewaehlte_kategorien = {r['kategorie_id'] for r in conn.execute(
         "SELECT kategorie_id FROM ereignis_kategorien WHERE ereignis_id=?", (eid,)

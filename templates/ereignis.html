@@ -79,10 +79,11 @@
     <button type="submit" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Speichern</button>
 </form>
 
+{% if e.titel %}
 <section class="card" style="margin-top:1.5rem">
     <h2>Bilder & Videos hochladen</h2>
     <form method="POST" action="{{ url_for('bilder_hochladen', eid=e.id) }}"
-          enctype="multipart/form-data" class="upload-form">
+          enctype="multipart/form-data" class="upload-form" id="upload-form">
         <label class="file-input-label">
             <input type="file" name="bilder" multiple accept="image/*,video/*" class="file-input-hidden"
                    id="bilder-input" onchange="zeigeUploadVorschau(this)">
@@ -97,6 +98,15 @@
         </div>
     </form>
 </section>
+{% endif %}
+
+<div id="upload-ladescreen" style="display:none">
+    <div class="upload-ladescreen-inhalt">
+        <div class="pinata-emoji" id="pinata-anim">🪅</div>
+        <p class="upload-ladetext">Bilder werden hochgeladen…</p>
+    </div>
+</div>
+<canvas id="konfetti-canvas" style="display:none;position:fixed;inset:0;pointer-events:none;z-index:9998"></canvas>
 
 {% if bilder %}
 <section class="card" id="bilder" style="margin-top:1.5rem">
@@ -357,6 +367,60 @@ function zeigeUploadVorschau(input) {
         }
         grid.appendChild(item);
     });
+}
+
+// Pinata Upload-Ladescreen
+const uploadForm = document.getElementById('upload-form');
+if (uploadForm) {
+    uploadForm.addEventListener('submit', () => {
+        document.getElementById('upload-ladescreen').style.display = 'flex';
+    });
+}
+
+// Konfetti nach Upload (#bilder in URL)
+function starteKonfetti() {
+    const canvas = document.getElementById('konfetti-canvas');
+    canvas.style.display = 'block';
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const ctx = canvas.getContext('2d');
+    const farben = ['#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#ff922b','#cc5de8','#f06595'];
+    const teilchen = Array.from({length: 160}, () => ({
+        x: Math.random() * canvas.width,
+        y: -20 - Math.random() * 100,
+        w: Math.random() * 10 + 5,
+        h: Math.random() * 6 + 3,
+        farbe: farben[Math.floor(Math.random() * farben.length)],
+        vx: (Math.random() - 0.5) * 7,
+        vy: Math.random() * 5 + 2,
+        rot: Math.random() * 360,
+        vr: (Math.random() - 0.5) * 12
+    }));
+    let frame;
+    function animiere() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        let aktiv = false;
+        teilchen.forEach(t => {
+            if (t.y < canvas.height + 20) {
+                aktiv = true;
+                t.x += t.vx; t.y += t.vy; t.vy += 0.12; t.rot += t.vr;
+                ctx.save();
+                ctx.translate(t.x, t.y);
+                ctx.rotate(t.rot * Math.PI / 180);
+                ctx.fillStyle = t.farbe;
+                ctx.fillRect(-t.w/2, -t.h/2, t.w, t.h);
+                ctx.restore();
+            }
+        });
+        if (aktiv) frame = requestAnimationFrame(animiere);
+        else canvas.style.display = 'none';
+    }
+    animiere();
+    setTimeout(() => { cancelAnimationFrame(frame); canvas.style.display = 'none'; }, 4000);
+}
+
+if (window.location.hash === '#bilder') {
+    starteKonfetti();
 }
 </script>
 {% endblock %}
