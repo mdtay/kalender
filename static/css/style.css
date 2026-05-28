@@ -1682,6 +1682,10 @@ textarea { resize: vertical; }
     .lightbox-footer { padding: 0.6rem 1rem; }
 }
 
+.pflichtfeld-stern { color: var(--accent); font-size: 0.9rem; }
+.pflichtfeld-hinweis { margin-top: 0.4rem; font-size: 0.8rem; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ── Upload Ladescreen ─────────────────────────────────────────────────────── */
 #upload-ladescreen {
     position: fixed;

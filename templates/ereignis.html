@@ -15,8 +15,12 @@
     </section>
 
     <section class="card">
-        <h2>Titel</h2>
-        <input type="text" name="titel" value="{{ e.titel }}" placeholder="z.B. Ausflug zum See" class="input">
+        <h2>Titel <span class="pflichtfeld-stern">*</span></h2>
+        <input type="text" name="titel" id="titel-input" value="{{ e.titel }}"
+               placeholder="z.B. Ausflug zum See" class="input" required>
+        {% if not e.titel %}
+        <p class="hint pflichtfeld-hinweis">Titel erforderlich um Bilder hochzuladen</p>
+        {% endif %}
     </section>
 
     <section class="card">
@@ -76,7 +80,11 @@
         <textarea name="text" rows="8" placeholder="Was hast du erlebt?">{{ e.text }}</textarea>
     </section>
 
-    <button type="submit" class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Speichern</button>
+    <button type="submit" id="speichern-btn" class="btn btn-primary"
+            {% if not e.titel %}disabled{% endif %}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Speichern
+    </button>
 </form>
 
 {% if e.titel %}
@@ -231,6 +239,15 @@
 <script>
 const alleTags = {{ alle_tags | map(attribute='tag') | list | tojson }};
 document.querySelectorAll('.tag-eingabe').forEach(el => new TagEingabe(el, alleTags));
+
+// Speichern-Button nur aktiv wenn Titel gefüllt
+const titelInput = document.getElementById('titel-input');
+const speichernBtn = document.getElementById('speichern-btn');
+if (titelInput && speichernBtn) {
+    titelInput.addEventListener('input', () => {
+        speichernBtn.disabled = titelInput.value.trim() === '';
+    });
+}
 
 // Lightbox
 const bilderDaten = [
