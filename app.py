@@ -481,6 +481,12 @@ def monat(jahr, monat):
     darstellung = conn.execute(
         "SELECT wert FROM einstellungen WHERE schluessel='darstellung'"
     ).fetchone()['wert']
+    alle_jahre = [int(r[0]) for r in conn.execute(
+        "SELECT DISTINCT strftime('%Y', datum) FROM ereignisse UNION "
+        "SELECT DISTINCT strftime('%Y', datum) FROM bilder ORDER BY 1 DESC"
+    ).fetchall()]
+    if jahr not in alle_jahre:
+        alle_jahre = sorted(set(alle_jahre + [jahr]), reverse=True)
     conn.close()
 
     cal = calendar.monthcalendar(jahr, monat)
@@ -496,6 +502,7 @@ def monat(jahr, monat):
         prev_monat=prev_m, prev_jahr=prev_j, next_monat=next_m, next_jahr=next_j,
         alle_kategorien=alle_kategorien, kategorie_filter=kategorie_filter,
         alle_personen=alle_personen, person_filter=person_filter,
+        alle_jahre=alle_jahre, alle_monate=MONATE[1:],
     )
 
 

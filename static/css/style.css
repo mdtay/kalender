@@ -228,10 +228,10 @@ textarea { resize: vertical; }
     gap: 0.5rem;
 }
 .upload-vorschau-item {
+    position: relative;
     width: 72px;
     height: 72px;
     border-radius: 6px;
-    overflow: hidden;
     background: var(--surface2);
     flex-shrink: 0;
 }
@@ -240,6 +240,8 @@ textarea { resize: vertical; }
     height: 100%;
     object-fit: cover;
     display: block;
+    border-radius: 6px;
+    overflow: hidden;
 }
 .upload-vorschau-video-ph {
     width: 100%;
@@ -284,8 +286,8 @@ textarea { resize: vertical; }
     padding: 0.15rem 0.4rem;
     font-size: 0.72rem;
     gap: 0.25rem;
-    border: none;
-    background: var(--surface);
+    border: 1.5px solid var(--border);
+    background: var(--surface2);
 }
 .personen-checkboxen-mini .person-avatar-sm {
     width: 16px;
@@ -377,6 +379,8 @@ textarea { resize: vertical; }
     gap: 2rem;
     margin-bottom: 1.5rem;
 }
+.kalender-header-mitte { display: flex; align-items: center; gap: 0.5rem; }
+.kalender-select { width: auto; padding: 0.3rem 0.5rem; font-size: 1rem; font-weight: 600; }
 .kalender-header h1 { font-size: 1.8rem; }
 
 .kalender-wrapper {
@@ -584,14 +588,14 @@ textarea { resize: vertical; }
     flex: 1;
     width: 100%;
     min-height: 0;
-    padding: 2.5rem 3.5rem 0;
+    padding: 0;
 }
 .lightbox-content img,
 .lightbox-content video {
     max-width: 100%;
     max-height: 100vh;
     object-fit: contain;
-    border-radius: var(--radius);
+    border-radius: 0;
     display: block;
 }
 #lightbox-video { display: none; outline: none; }
@@ -1675,7 +1679,7 @@ textarea { resize: vertical; }
     .pagination .btn { min-height: 40px; padding: 0.4rem 0.7rem; }
 
     /* Lightbox */
-    .lightbox-content { padding: 1.5rem 2.5rem 0; }
+    .lightbox-content { padding: 0; }
     .lightbox-content img, .lightbox-content video { max-height: 100vh; }
     .lightbox-nav { width: 40px; height: 60px; font-size: 2rem; }
     .lightbox-prev { left: 0.25rem; }

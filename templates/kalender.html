@@ -7,10 +7,30 @@
 {% block content %}
     <div class="kalender-header">
         <a href="{{ url_for('monat', jahr=prev_jahr, monat=prev_monat, kategorien=kategorie_filter, personen=person_filter) }}" class="btn btn-ghost kalender-nav-btn">‹</a>
-        <h1>{{ monat_name }} {{ jahr }}</h1>
+        <div class="kalender-header-mitte">
+            <select id="monat-select" class="input-sm kalender-select">
+                {% for i in range(1, 13) %}
+                <option value="{{ i }}" {% if i == monat %}selected{% endif %}>{{ alle_monate[i-1] }}</option>
+                {% endfor %}
+            </select>
+            <select id="jahr-select" class="input-sm kalender-select">
+                {% for j in alle_jahre %}
+                <option value="{{ j }}" {% if j == jahr %}selected{% endif %}>{{ j }}</option>
+                {% endfor %}
+            </select>
+        </div>
         <a href="{{ url_for('monat', jahr=next_jahr, monat=next_monat, kategorien=kategorie_filter, personen=person_filter) }}" class="btn btn-ghost kalender-nav-btn">›</a>
         <a href="{{ url_for('monat', jahr=heute[:4]|int, monat=heute[5:7]|int, kategorien=kategorie_filter, personen=person_filter) }}" class="btn btn-ghost btn-sm heute-link">Heute</a>
     </div>
+    <script>
+    function navigiereKalender() {
+        const m = document.getElementById('monat-select').value;
+        const j = document.getElementById('jahr-select').value;
+        window.location.href = '/monat/' + j + '/' + m;
+    }
+    document.getElementById('monat-select').addEventListener('change', navigiereKalender);
+    document.getElementById('jahr-select').addEventListener('change', navigiereKalender);
+    </script>
 
 
 
