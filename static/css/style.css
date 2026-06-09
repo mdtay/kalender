@@ -584,12 +584,12 @@ textarea { resize: vertical; }
     flex: 1;
     width: 100%;
     min-height: 0;
-    padding: 3rem 5rem;
+    padding: 2.5rem 3.5rem 0;
 }
 .lightbox-content img,
 .lightbox-content video {
     max-width: 100%;
-    max-height: calc(100vh - 140px);
+    max-height: 100vh;
     object-fit: contain;
     border-radius: var(--radius);
     display: block;
@@ -637,16 +637,17 @@ textarea { resize: vertical; }
 .lightbox-prev { left: 0.75rem; }
 .lightbox-next { right: 0.75rem; }
 .lightbox-footer {
-    position: relative;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
     z-index: 2;
-    width: 100%;
-    background: rgba(0,0,0,0.5);
-    padding: 0.75rem 1.5rem;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    padding: 2rem 1.5rem 0.75rem;
     display: flex;
     align-items: center;
     gap: 1rem;
     min-height: 48px;
-    flex-shrink: 0;
 }
 .lightbox-zaehler {
     color: rgba(255,255,255,0.5);
@@ -1674,17 +1675,53 @@ textarea { resize: vertical; }
     .pagination .btn { min-height: 40px; padding: 0.4rem 0.7rem; }
 
     /* Lightbox */
-    .lightbox-content { padding: 3rem 3.5rem; }
-    .lightbox-content img, .lightbox-content video { max-height: calc(100vh - 120px); }
+    .lightbox-content { padding: 1.5rem 2.5rem 0; }
+    .lightbox-content img, .lightbox-content video { max-height: 100vh; }
     .lightbox-nav { width: 40px; height: 60px; font-size: 2rem; }
     .lightbox-prev { left: 0.25rem; }
     .lightbox-next { right: 0.25rem; }
     .lightbox-footer { padding: 0.6rem 1rem; }
 }
 
+.upload-vorschau-entfernen {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    border: none;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+.alles-speichern-leiste {
+    position: sticky;
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    z-index: 50;
+    display: flex;
+    justify-content: center;
+    padding: 0.75rem 0;
+    pointer-events: none;
+}
+.alles-speichern-leiste .btn { pointer-events: all; box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
 .pflichtfeld-stern { color: var(--accent); font-size: 0.9rem; }
 .pflichtfeld-hinweis { margin-top: 0.4rem; font-size: 0.8rem; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Pagination ────────────────────────────────────────────────────────────── */
+.pagination { display: flex; justify-content: center; align-items: center; gap: 0.5rem; margin: 1.5rem 0; flex-wrap: wrap; }
+.pagination-btn { padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 0.9rem; text-decoration: none; }
+.pagination-btn:hover { border-color: var(--accent); color: var(--accent); }
+.pagination-btn.aktiv { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; pointer-events: none; }
+.pagination-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pagination-info { color: var(--text-muted); font-size: 0.85rem; }
 
 /* ── Upload Ladescreen ─────────────────────────────────────────────────────── */
 #upload-ladescreen {

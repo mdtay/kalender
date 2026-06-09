@@ -159,7 +159,7 @@
                 {% endif %}
             </div>
             <div class="bild-info">
-                <form method="POST" action="{{ url_for('bild_meta', bild_id=bild.id) }}">
+                <form method="POST" action="{{ url_for('bild_meta', bild_id=bild.id) }}" class="bild-meta-form">
                     <details class="bild-meta-akkordeon" {% if bild.beschreibung or bild.tags %}open{% endif %}>
                         <summary>Beschreibung & Tags</summary>
                         <div class="bild-meta-felder">
@@ -201,15 +201,19 @@
                     </details>
                     {% endif %}
                     {% endif %}
-                    <div class="bild-aktionen-zeile">
-                        <button type="submit" class="btn btn-sm">Speichern</button>
-                    </div>
-                </form>
+                    </form>
             </div>
         </div>
         {% endfor %}
     </div>
 </section>
+{% if bilder %}
+<div class="alles-speichern-leiste">
+    <button class="btn btn-primary" id="alles-speichern-btn" onclick="allesSpeichern()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Alles speichern
+    </button>
+</div>
 {% endif %}
 
 <div id="lightbox" class="lightbox">
@@ -352,21 +356,42 @@ document.getElementById('lightbox').addEventListener('touchend', e => {
     if (Math.abs(dx) > 50) navigiereLichtbox(dx < 0 ? 1 : -1);
 }, { passive: true });
 
+let ausgewaehlteDateien = [];
+
 function zeigeUploadVorschau(input) {
+    ausgewaehlteDateien = Array.from(input.files);
+    aktualisiereVorschau();
+}
+
+function entferneDatei(index) {
+    ausgewaehlteDateien.splice(index, 1);
+    const dt = new DataTransfer();
+    ausgewaehlteDateien.forEach(f => dt.items.add(f));
+    document.getElementById('bilder-input').files = dt.files;
+    aktualisiereVorschau();
+}
+
+function aktualisiereVorschau() {
     const vorschau = document.getElementById('upload-vorschau');
     const grid = document.getElementById('upload-vorschau-grid');
     const anzahl = document.getElementById('upload-anzahl');
     grid.innerHTML = '';
-    if (input.files.length === 0) {
+    if (ausgewaehlteDateien.length === 0) {
         vorschau.style.display = 'none';
         return;
     }
     vorschau.style.display = 'block';
-    const n = input.files.length;
+    const n = ausgewaehlteDateien.length;
     anzahl.textContent = n === 1 ? '1 Datei ausgewählt' : n + ' Dateien ausgewählt';
-    Array.from(input.files).forEach(file => {
+    ausgewaehlteDateien.forEach((file, index) => {
         const item = document.createElement('div');
         item.className = 'upload-vorschau-item';
+        const xBtn = document.createElement('button');
+        xBtn.type = 'button';
+        xBtn.className = 'upload-vorschau-entfernen';
+        xBtn.textContent = '×';
+        xBtn.onclick = () => entferneDatei(index);
+        item.appendChild(xBtn);
         if (file.type.startsWith('image/')) {
             const reader = new FileReader();
             reader.onload = e => {
@@ -384,6 +409,19 @@ function zeigeUploadVorschau(input) {
         }
         grid.appendChild(item);
     });
+}
+
+async function allesSpeichern() {
+    const btn = document.getElementById('alles-speichern-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Wird gespeichert…';
+    const forms = document.querySelectorAll('.bild-meta-form');
+    await Promise.all(Array.from(forms).map(f => fetch(f.action, { method: 'POST', body: new FormData(f) })));
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Gespeichert ✓';
+    setTimeout(() => {
+        btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Alles speichern';
+    }, 2500);
 }
 
 // Pinata Upload-Ladescreen

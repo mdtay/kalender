@@ -1013,10 +1013,11 @@ def diashow():
     kategorie_filter = request.args.getlist('kategorien')
     von = request.args.get('von', '').strip()
     bis = request.args.get('bis', '').strip()
+    page = max(1, int(request.args.get('page', 1) or 1))
+    per_page = 48
 
     conn = get_db()
-    sql = """
-        SELECT DISTINCT b.*, e.titel as ereignis_titel, e.id as ereignis_id
+    basis = """
         FROM bilder b
         LEFT JOIN ereignisse e ON e.id = b.ereignis_id
         LEFT JOIN bild_tags bt ON bt.bild_id=b.id
@@ -1026,26 +1027,27 @@ def diashow():
     """
     params = []
     if tag_filter:
-        sql += " AND bt.tag = ?"
+        basis += " AND bt.tag = ?"
         params.append(tag_filter)
     if personen_filter:
-        sql += f" AND p.name IN ({','.join('?' * len(personen_filter))})"
+        basis += f" AND p.name IN ({','.join('?' * len(personen_filter))})"
         params.extend(personen_filter)
     if kategorie_filter:
         cat_ids = [int(k) for k in kategorie_filter if k.isdigit()]
         if cat_ids:
-            sql += f" AND b.ereignis_id IN (SELECT ereignis_id FROM ereignis_kategorien WHERE kategorie_id IN ({','.join('?' * len(cat_ids))}))"
+            basis += f" AND b.ereignis_id IN (SELECT ereignis_id FROM ereignis_kategorien WHERE kategorie_id IN ({','.join('?' * len(cat_ids))}))"
             params.extend(cat_ids)
     if von:
-        sql += " AND b.datum >= ?"
+        basis += " AND b.datum >= ?"
         params.append(von)
     if bis:
-        sql += " AND b.datum <= ?"
+        basis += " AND b.datum <= ?"
         params.append(bis)
-    sql += " ORDER BY b.datum DESC, b.id DESC"
 
-    bilder = conn.execute(sql, params).fetchall()
-    gesamt = len(bilder)
+    gesamt = conn.execute(f"SELECT COUNT(DISTINCT b.id) {basis}", params).fetchone()[0]
+    sql = f"SELECT DISTINCT b.*, e.titel as ereignis_titel, e.id as ereignis_id {basis} ORDER BY b.datum DESC, b.id DESC LIMIT ? OFFSET ?"
+    bilder = conn.execute(sql, params + [per_page, (page - 1) * per_page]).fetchall()
+    seiten = (gesamt + per_page - 1) // per_page
 
     # Monats-Gruppierung
     bilder_nach_monat = []
@@ -1115,6 +1117,9 @@ def diashow():
         kategorie_filter=kategorie_filter,
         von=von, bis=bis,
         gesamt=gesamt,
+        page=page,
+        seiten=seiten,
+        per_page=per_page,
         alle_ereignisse=alle_ereignisse,
         bild_personen=bild_personen,
         bild_tags_map=bild_tags_map,
