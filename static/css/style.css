@@ -361,6 +361,15 @@ textarea { resize: vertical; }
 .personen-checkboxen-mini .personen-chip:has(input:checked)::after {
     display: none;
 }
+.personen-chip-auto {
+    border-style: dashed;
+    opacity: 0.85;
+}
+.personen-chip-auto-badge {
+    font-size: 0.65em;
+    opacity: 0.7;
+    margin-left: 0.1rem;
+}
 .person-avatar-sm {
     width: 20px;
     height: 20px;

@@ -264,6 +264,18 @@ def init_db():
         conn.commit()
     except Exception:
         pass
+    # Migration: quelle-Spalte für bild_personen (auto vs. manuell bestätigt)
+    try:
+        conn.execute("ALTER TABLE bild_personen ADD COLUMN quelle TEXT NOT NULL DEFAULT 'manuell'")
+        conn.commit()
+    except Exception:
+        pass
+    # Migration: gesicht_status-Spalte für Bilder (Gesichtserkennungs-Status)
+    try:
+        conn.execute("ALTER TABLE bilder ADD COLUMN gesicht_status TEXT NOT NULL DEFAULT 'ausstehend'")
+        conn.commit()
+    except Exception:
+        pass
     conn.close()
 
 
@@ -538,9 +550,9 @@ def tag(datum):
         bilder_pro_ereignis[e['id']] = bilder
         for bild in bilder:
             bp = conn.execute(
-                "SELECT person_id FROM bild_personen WHERE bild_id=?", (bild['id'],)
+                "SELECT person_id, quelle FROM bild_personen WHERE bild_id=?", (bild['id'],)
             ).fetchall()
-            bild_personen[bild['id']] = {r['person_id'] for r in bp}
+            bild_personen[bild['id']] = {r['person_id']: r['quelle'] for r in bp}
 
     conn.close()
 
@@ -626,9 +638,9 @@ def ereignis_bearbeiten(eid):
     bild_personen = {}
     for bild in bilder:
         bp = conn.execute(
-            "SELECT person_id FROM bild_personen WHERE bild_id=?", (bild['id'],)
+            "SELECT person_id, quelle FROM bild_personen WHERE bild_id=?", (bild['id'],)
         ).fetchall()
-        bild_personen[bild['id']] = {r['person_id'] for r in bp}
+        bild_personen[bild['id']] = {r['person_id']: r['quelle'] for r in bp}
 
     conn.close()
 
@@ -718,12 +730,12 @@ def bild_meta(bild_id):
 
     conn.execute("DELETE FROM bild_personen WHERE bild_id=?", (bild_id,))
     for pid in person_ids:
-        conn.execute("INSERT OR IGNORE INTO bild_personen VALUES (?,?)", (bild_id, int(pid)))
+        conn.execute("INSERT OR IGNORE INTO bild_personen (bild_id, person_id) VALUES (?,?)", (bild_id, int(pid)))
 
     for name in [n.strip() for n in personen_neu.split(',') if n.strip()]:
         conn.execute("INSERT OR IGNORE INTO personen (name) VALUES (?)", (name,))
         p = conn.execute("SELECT id FROM personen WHERE name=?", (name,)).fetchone()
-        conn.execute("INSERT OR IGNORE INTO bild_personen VALUES (?,?)", (bild_id, p['id']))
+        conn.execute("INSERT OR IGNORE INTO bild_personen (bild_id, person_id) VALUES (?,?)", (bild_id, p['id']))
 
     row = conn.execute("SELECT ereignis_id FROM bilder WHERE id=?", (bild_id,)).fetchone()
     eid = row['ereignis_id'] if row else None
@@ -781,6 +793,8 @@ def bild_drehen(bild_id):
             img = PILImage.open(path)
             img = img.rotate(-90, expand=True)
             img.save(path)
+            conn.execute("UPDATE bilder SET gesicht_status='ausstehend' WHERE id=?", (bild_id,))
+            conn.commit()
     conn.close()
     return redirect(request.referrer or url_for('ereignis_bearbeiten', eid=bild['ereignis_id']))
 
@@ -1101,9 +1115,9 @@ def diashow():
     if bild_ids:
         ph = ','.join('?' * len(bild_ids))
         for row in conn.execute(
-            f"SELECT bild_id, person_id FROM bild_personen WHERE bild_id IN ({ph})", bild_ids
+            f"SELECT bild_id, person_id, quelle FROM bild_personen WHERE bild_id IN ({ph})", bild_ids
         ):
-            bild_personen.setdefault(row['bild_id'], set()).add(row['person_id'])
+            bild_personen.setdefault(row['bild_id'], {})[row['person_id']] = row['quelle']
         for row in conn.execute(
             f"SELECT bild_id, GROUP_CONCAT(tag, ',') as tags FROM bild_tags "
             f"WHERE bild_id IN ({ph}) GROUP BY bild_id", bild_ids

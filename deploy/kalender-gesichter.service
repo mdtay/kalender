@@ -1,0 +1,9 @@
+[Unit]
+Description=Kalender Gesichtserkennung (periodischer Scan neuer Fotos)
+After=network.target
+
+[Service]
+Type=oneshot
+User=tay
+WorkingDirectory=/home/tay/kalender
+ExecStart=/home/tay/kalender/venv/bin/python /home/tay/kalender/gesichter_erkennen.py
