@@ -59,6 +59,7 @@ def init_db(conn):
             favorit INTEGER NOT NULL DEFAULT 0,
             synced_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE INDEX IF NOT EXISTS idx_fotos_datum ON fotos(datum);
     ''')
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('sprache', 'de')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('anzeige_dauer_sek', '8')")

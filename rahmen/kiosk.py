@@ -89,6 +89,7 @@ def init_db():
             favorit INTEGER NOT NULL DEFAULT 0,
             synced_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE INDEX IF NOT EXISTS idx_fotos_datum ON fotos(datum);
     ''')
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('sprache', 'de')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('anzeige_dauer_sek', '8')")
@@ -197,6 +198,8 @@ class App:
         self.uebergang_start = 0
         self.uebergang_dauer = int(einstellung_holen(self.conn, 'uebergang_dauer_ms', '800'))
         self.foto_uebergang_typ = 'fade'
+        self.uebergang_alt_frame = None
+        self.uebergang_neu_frame = None
         self.aktuelles_datum = None
         self.anzeige_start = 0
         self.letztes_foto_laden = pygame.time.get_ticks()
@@ -262,6 +265,11 @@ class App:
         if not self.fotos:
             self.aktuelle_surface = None
             return
+        # Nach jedem kompletten Durchlauf neu mischen, statt nur stuendlich -
+        # sonst wiederholt sich bei wenigen Fotos stur dieselbe Reihenfolge.
+        if self.foto_index > 0 and self.foto_index % len(self.fotos) == 0:
+            random.shuffle(self.fotos)
+
         versuche = 0
         while versuche < len(self.fotos):
             versuche += 1
@@ -283,6 +291,14 @@ class App:
                 self.foto_uebergang_typ = roh_typ
             self.uebergang_dauer = int(einstellung_holen(self.conn, 'uebergang_dauer_ms', '800'))
             self.uebergang_start = pygame.time.get_ticks()
+            # Vollbild-Rahmen (inkl. schwarzer Balken) einmalig vorberechnen,
+            # damit beim Ueberblenden nicht nur die Fotos selbst, sondern auch
+            # ihre unterschiedlich breiten Balken sauber mit ausblenden -
+            # sonst bleiben bei Quer-/Hochformat-Wechseln Reste des alten
+            # Fotos an den Raendern sichtbar (die vom neuen Foto nicht
+            # ueberdeckt werden, weil dessen Balken anders liegen).
+            self.uebergang_alt_frame = self._vollbild_frame(self.aktuelle_surface)
+            self.uebergang_neu_frame = self._vollbild_frame(self.naechste_surface)
             self.in_uebergang = True
             return
         self.aktuelle_surface = None
@@ -291,45 +307,48 @@ class App:
     def _rect_zentriert(self, surface):
         return surface.get_rect(center=(self.w // 2, self.h // 2))
 
+    def _vollbild_frame(self, surface):
+        """Komponiert ein Foto (mit ggf. schwarzen Balken) auf eine Surface in
+        exakter Bildschirmgroesse, damit Uebergaenge zwischen unterschiedlich
+        grossen/orientierten Fotos sauber ueberblenden koennen."""
+        frame = pygame.Surface((self.w, self.h))
+        frame.fill(FARBE_HINTERGRUND)
+        if surface:
+            frame.blit(surface, self._rect_zentriert(surface))
+        return frame
+
     def _uebergang_zeichnen(self, typ, fortschritt):
-        alt, neu = self.aktuelle_surface, self.naechste_surface
+        alt = self.uebergang_alt_frame
+        neu = self.uebergang_neu_frame
 
         if typ == 'slide':
-            if alt:
-                rect = self._rect_zentriert(alt)
-                rect.x -= int(self.w * fortschritt)
-                self.screen.blit(alt, rect)
-            rect = self._rect_zentriert(neu)
-            rect.x += int(self.w * (1 - fortschritt))
-            self.screen.blit(neu, rect)
+            self.screen.blit(alt, (-int(self.w * fortschritt), 0))
+            self.screen.blit(neu, (int(self.w * (1 - fortschritt)), 0))
             return
 
         if typ == 'rotate':
-            if alt:
-                self.screen.blit(alt, self._rect_zentriert(alt))
+            self.screen.blit(alt, (0, 0))
             skala = 1.05 - 0.05 * fortschritt
             winkel = 3 * (1 - fortschritt)
             gedreht = pygame.transform.rotozoom(neu, winkel, skala)
             gedreht = gedreht.convert_alpha()
             gedreht.set_alpha(int(255 * fortschritt))
-            self.screen.blit(gedreht, self._rect_zentriert(gedreht))
+            self.screen.blit(gedreht, gedreht.get_rect(center=(self.w // 2, self.h // 2)))
             return
 
         if typ == 'wipe':
-            if alt:
-                self.screen.blit(alt, self._rect_zentriert(alt))
+            self.screen.blit(alt, (0, 0))
             breite_sichtbar = max(1, int(self.w * fortschritt))
             self.screen.set_clip(pygame.Rect(0, 0, breite_sichtbar, self.h))
-            self.screen.blit(neu, self._rect_zentriert(neu))
+            self.screen.blit(neu, (0, 0))
             self.screen.set_clip(None)
             return
 
-        # 'fade' startet mit einer Ueberblendung
-        if alt:
-            self.screen.blit(alt, self._rect_zentriert(alt))
+        # 'fade' ist der Standard-Uebergang
+        self.screen.blit(alt, (0, 0))
         neu_kopie = neu.copy()
         neu_kopie.set_alpha(int(255 * fortschritt))
-        self.screen.blit(neu_kopie, self._rect_zentriert(neu_kopie))
+        self.screen.blit(neu_kopie, (0, 0))
 
     def _bild_zeichnen(self, surface, anzeige_ms):
         self.screen.blit(surface, self._rect_zentriert(surface))
