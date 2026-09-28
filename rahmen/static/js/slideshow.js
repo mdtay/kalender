@@ -10,6 +10,19 @@
     let sichtbarIstA = true;
     let timerId = null;
 
+    // Antippen zeigt kurz das Einstellungen-Zahnrad oben rechts, danach
+    // blendet es sich von selbst wieder aus.
+    const einstellungenButton = document.getElementById('einstellungen-button');
+    let ausblendenTimerId = null;
+    document.addEventListener('click', (ev) => {
+        if (ev.target === einstellungenButton) return;
+        einstellungenButton.classList.add('sichtbar');
+        clearTimeout(ausblendenTimerId);
+        ausblendenTimerId = setTimeout(() => {
+            einstellungenButton.classList.remove('sichtbar');
+        }, 6000);
+    });
+
     function ebenenFuerTyp(typ) {
         // liefert die CSS-Klassen fuer "kommt rein" und "geht raus" je nach Uebergangstyp
         if (typ === 'slide') {

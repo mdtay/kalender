@@ -78,7 +78,7 @@ Desktop-Paket installiert). Stattdessen minimales X + `startx` beim Login:
 
 ```bash
 sudo raspi-config nonint do_boot_behaviour B2   # Konsolen-Autologin
-sudo apt install -y xserver-xorg xinit x11-xserver-utils chromium
+sudo apt install -y xserver-xorg xinit x11-xserver-utils chromium unclutter
 ```
 ```bash
 cat >> ~/.bash_profile << 'EOF'
@@ -99,6 +99,7 @@ cat > ~/rahmen-kiosk-start.sh << 'EOF'
 #!/bin/bash
 until curl -sf http://localhost:8600/ >/dev/null; do sleep 1; done
 xset s off; xset -dpms; xset s noblank
+unclutter -idle 0 &
 chromium --no-memcheck --kiosk --noerrdialogs --disable-infobars \
   --disable-session-crashed-bubble \
   --check-for-update-interval=31536000 \
