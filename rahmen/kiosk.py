@@ -34,10 +34,18 @@ FPS = 30
 FARBE_HINTERGRUND = (0, 0, 0)
 FARBE_TEXT = (240, 240, 240)
 FARBE_TEXT_GEDAEMPFT = (150, 150, 150)
-FARBE_FLAECHE = (45, 45, 45)
-FARBE_FLAECHE_AKTIV = (50, 100, 190)
+
+# ── Helles, modernes Design fuer Einstellungen/Fotos-verwalten ─────────
+FARBE_SEITE = (246, 247, 250)
+FARBE_KARTE = (255, 255, 255)
+FARBE_KARTE_RAND = (228, 230, 236)
+FARBE_KARTE_AKTIV = (232, 240, 254)
+FARBE_KARTE_AKTIV_RAND = (59, 130, 246)
+FARBE_TEXT_DUNKEL = (32, 34, 40)
+FARBE_TEXT_DUNKEL_GEDAEMPFT = (120, 124, 136)
 FARBE_AKZENT = (59, 130, 246)
-FARBE_SEITE = (245, 240, 232)
+FARBE_AKZENT_DUNKEL = (37, 99, 235)
+FARBE_TOGGLE_AUS = (210, 213, 222)
 
 
 def get_db():
@@ -86,6 +94,17 @@ def bytes_human(b):
     return f"{b:.1f} PB"
 
 
+def datum_de_formatieren(iso_text):
+    """'2026-09-28 21:15:03' -> '28.09.2026' (nur das Datum, ohne Uhrzeit)."""
+    if not iso_text:
+        return None
+    try:
+        jahr, monat, tag = iso_text[:10].split('-')
+        return f"{tag}.{monat}.{jahr}"
+    except ValueError:
+        return iso_text
+
+
 def einstellung_holen(conn, schluessel, default):
     row = conn.execute("SELECT wert FROM einstellungen WHERE schluessel=?", (schluessel,)).fetchone()
     return row['wert'] if row else default
@@ -96,13 +115,18 @@ def einstellung_setzen(conn, schluessel, wert):
     conn.commit()
 
 
+UEBERGANG_TYPEN = ['fade', 'slide', 'kenburns', 'rotate', 'random']
+DATUM_EINBLEND_START_MS = 1000
+DATUM_EINBLEND_DAUER_MS = 400
+
+
 def fotos_laden(conn):
     videos_aktiv = einstellung_holen(conn, 'videos_aktiv', '1') == '1'
     if videos_aktiv:
-        rows = conn.execute("SELECT id, lokaler_dateiname, ist_video, favorit FROM fotos").fetchall()
+        rows = conn.execute("SELECT id, lokaler_dateiname, ist_video, favorit, datum FROM fotos").fetchall()
     else:
         rows = conn.execute(
-            "SELECT id, lokaler_dateiname, ist_video, favorit FROM fotos WHERE ist_video=0"
+            "SELECT id, lokaler_dateiname, ist_video, favorit, datum FROM fotos WHERE ist_video=0"
         ).fetchall()
     fotos = [dict(r) for r in rows]
     random.shuffle(fotos)
@@ -149,6 +173,8 @@ class App:
         self.in_uebergang = False
         self.uebergang_start = 0
         self.uebergang_dauer = int(einstellung_holen(self.conn, 'uebergang_dauer_ms', '800'))
+        self.foto_uebergang_typ = 'fade'
+        self.aktuelles_datum = None
         self.anzeige_start = 0
         self.letztes_foto_laden = pygame.time.get_ticks()
         self.zahnrad_bis = 0
@@ -213,6 +239,12 @@ class App:
             if surface is None:
                 continue
             self.naechste_surface = surface
+            self.aktuelles_datum = foto.get('datum')
+            roh_typ = einstellung_holen(self.conn, 'uebergang_typ', 'fade')
+            if roh_typ == 'random':
+                self.foto_uebergang_typ = random.choice(['fade', 'slide', 'kenburns', 'rotate'])
+            else:
+                self.foto_uebergang_typ = roh_typ
             self.uebergang_dauer = int(einstellung_holen(self.conn, 'uebergang_dauer_ms', '800'))
             self.uebergang_start = pygame.time.get_ticks()
             self.in_uebergang = True
@@ -266,6 +298,27 @@ class App:
         else:
             self.screen.blit(surface, self._rect_zentriert(surface))
 
+        self._datum_overlay_zeichnen(anzeige_ms)
+
+    def _datum_overlay_zeichnen(self, anzeige_ms):
+        if not self.aktuelles_datum:
+            return
+        if anzeige_ms < DATUM_EINBLEND_START_MS:
+            return
+        fortschritt = min(1.0, (anzeige_ms - DATUM_EINBLEND_START_MS) / DATUM_EINBLEND_DAUER_MS)
+        alpha = int(255 * fortschritt)
+        text_anzeige = datum_de_formatieren(self.aktuelles_datum)
+        if not text_anzeige:
+            return
+
+        balken_hoehe = 50
+        balken = pygame.Surface((self.w, balken_hoehe), pygame.SRCALPHA)
+        balken.fill((0, 0, 0, int(140 * fortschritt)))
+        text = self.font_mittel.render(text_anzeige, True, (255, 255, 255))
+        text.set_alpha(alpha)
+        balken.blit(text, text.get_rect(center=(self.w // 2, balken_hoehe // 2)))
+        self.screen.blit(balken, (0, self.h - balken_hoehe))
+
     def slideshow_update_und_zeichnen(self):
         jetzt = pygame.time.get_ticks()
 
@@ -283,7 +336,7 @@ class App:
             self.screen.blit(text, text.get_rect(center=(self.w // 2, self.h // 2)))
             return
 
-        typ = einstellung_holen(self.conn, 'uebergang_typ', 'fade')
+        typ = self.foto_uebergang_typ
 
         if self.in_uebergang:
             fortschritt = min(1.0, (jetzt - self.uebergang_start) / max(1, self.uebergang_dauer))
@@ -335,12 +388,12 @@ class App:
 
     def settings_zeilen_aufbauen(self):
         zeilen = []
-        y = 16
-        row_h = 56
-        gap = 10
+        y = 28
+        row_h = 60
+        gap = 12
 
         zeilen.append(('titel', self.t('personen_titel'), y))
-        y += 44
+        y += 48
         personen = self.conn.execute("SELECT * FROM personen_cache ORDER BY name").fetchall()
         for p in personen:
             zeilen.append(('person', dict(p), y))
@@ -348,39 +401,60 @@ class App:
         if not personen:
             zeilen.append(('hinweis', self.t('personen_hinweis'), y))
             y += 36
-        y += 20
+        y += 28
 
         zeilen.append(('video_toggle', None, y)); y += row_h + gap
         zeilen.append(('dauer_stepper', None, y)); y += row_h + gap
         zeilen.append(('uebergang_typ', None, y)); y += row_h + gap
         zeilen.append(('uebergang_dauer', None, y)); y += row_h + gap
         zeilen.append(('sprache', None, y)); y += row_h + gap
-        y += 16
-        zeilen.append(('status', None, y)); y += 54
+        y += 20
+        zeilen.append(('status', None, y)); y += 58
         zeilen.append(('button_fotos', None, y)); y += row_h + gap
         zeilen.append(('button_diashow', None, y)); y += row_h + gap
 
-        self._settings_inhalt_hoehe = y + 16
+        self._settings_inhalt_hoehe = y + 24
         return zeilen
 
+    def _karte(self, rect, aktiv=False):
+        hintergrund = FARBE_KARTE_AKTIV if aktiv else FARBE_KARTE
+        rand = FARBE_KARTE_AKTIV_RAND if aktiv else FARBE_KARTE_RAND
+        pygame.draw.rect(self.screen, hintergrund, rect, border_radius=16)
+        pygame.draw.rect(self.screen, rand, rect, width=2, border_radius=16)
+
+    def _haken_zeichnen(self, center, farbe):
+        x, y = center
+        pygame.draw.lines(self.screen, farbe, False,
+                           [(x - 7, y), (x - 2, y + 6), (x + 8, y - 7)], width=3)
+
     def _zeile_toggle(self, rect, label, an):
-        pygame.draw.rect(self.screen, FARBE_FLAECHE, rect, border_radius=12)
-        text = self.font_mittel.render(label, True, FARBE_TEXT)
-        self.screen.blit(text, (rect.x + 16, rect.y + 14))
-        farbe = FARBE_AKZENT if an else (95, 95, 95)
-        pygame.draw.circle(self.screen, farbe, (rect.right - 36, rect.centery), 16)
+        self._karte(rect, aktiv=an)
+        text = self.font_mittel.render(label, True, FARBE_TEXT_DUNKEL)
+        self.screen.blit(text, (rect.x + 20, rect.y + (rect.height - text.get_height()) // 2))
+        # Pill-Schalter rechts
+        pill = pygame.Rect(rect.right - 78, rect.centery - 16, 58, 32)
+        pygame.draw.rect(self.screen, FARBE_AKZENT if an else FARBE_TOGGLE_AUS, pill, border_radius=16)
+        knopf_x = pill.right - 16 if an else pill.left + 16
+        pygame.draw.circle(self.screen, (255, 255, 255), (knopf_x, pill.centery), 13)
 
     def _zeile_stepper(self, rect, label):
-        pygame.draw.rect(self.screen, FARBE_FLAECHE, rect, border_radius=12)
-        text = self.font_mittel.render(label, True, FARBE_TEXT)
-        self.screen.blit(text, (rect.x + 80, rect.y + 14))
-        self.screen.blit(self.font_gross.render('-', True, FARBE_TEXT), (rect.x + 26, rect.y + 6))
-        self.screen.blit(self.font_gross.render('+', True, FARBE_TEXT), (rect.right - 46, rect.y + 6))
+        self._karte(rect)
+        text = self.font_mittel.render(label, True, FARBE_TEXT_DUNKEL)
+        self.screen.blit(text, (rect.x + 88, rect.y + (rect.height - text.get_height()) // 2))
+        for cx, zeichen in ((rect.x + 44, '-'), (rect.right - 44, '+')):
+            pygame.draw.circle(self.screen, FARBE_SEITE, (cx, rect.centery), 22)
+            pygame.draw.circle(self.screen, FARBE_KARTE_RAND, (cx, rect.centery), 22, width=2)
+            t = self.font_mittel.render(zeichen, True, FARBE_AKZENT_DUNKEL)
+            self.screen.blit(t, t.get_rect(center=(cx, rect.centery - 1)))
 
     def _zeile_button(self, rect, label, akzent=False):
-        farbe = FARBE_AKZENT if akzent else FARBE_FLAECHE
-        pygame.draw.rect(self.screen, farbe, rect, border_radius=12)
-        text = self.font_mittel.render(label, True, FARBE_TEXT)
+        if akzent:
+            pygame.draw.rect(self.screen, FARBE_AKZENT, rect, border_radius=16)
+            textfarbe = (255, 255, 255)
+        else:
+            self._karte(rect)
+            textfarbe = FARBE_TEXT_DUNKEL
+        text = self.font_mittel.render(label, True, textfarbe)
         self.screen.blit(text, text.get_rect(center=rect.center))
 
     def _status_zeichnen(self, rect):
@@ -392,9 +466,10 @@ class App:
         except FileNotFoundError:
             speicher_text = f"{self.t('speicher_belegt')}: -"
         letzter = self.conn.execute("SELECT MAX(synced_at) as t FROM fotos").fetchone()['t']
-        sync_text = f"{self.t('letzter_sync')}: {letzter or self.t('noch_nie')}"
-        self.screen.blit(self.font_klein.render(speicher_text, True, FARBE_TEXT_GEDAEMPFT), (rect.x, rect.y))
-        self.screen.blit(self.font_klein.render(sync_text, True, FARBE_TEXT_GEDAEMPFT), (rect.x, rect.y + 24))
+        letzter_text = datum_de_formatieren(letzter) or self.t('noch_nie')
+        sync_text = f"{self.t('letzter_sync')}: {letzter_text}"
+        self.screen.blit(self.font_klein.render(speicher_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT), (rect.x, rect.y))
+        self.screen.blit(self.font_klein.render(sync_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT), (rect.x, rect.y + 26))
 
     def settings_zeichnen(self):
         self.screen.fill(FARBE_SEITE)
@@ -403,20 +478,25 @@ class App:
             if y < -60 or y > self.h + 10:
                 continue
             if art == 'titel':
-                text = self.font_gross.render(daten, True, (30, 30, 30))
-                self.screen.blit(text, (24, y))
+                text = self.font_gross.render(daten, True, FARBE_TEXT_DUNKEL)
+                self.screen.blit(text, (28, y))
                 continue
             if art == 'hinweis':
-                text = self.font_klein.render(daten, True, (90, 90, 90))
-                self.screen.blit(text, (24, y))
+                text = self.font_klein.render(daten, True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+                self.screen.blit(text, (28, y))
                 continue
 
-            rect = pygame.Rect(24, y, self.w - 48, 56)
+            rect = pygame.Rect(28, y, self.w - 56, 60)
             if art == 'person':
-                farbe = FARBE_FLAECHE_AKTIV if daten['erlaubt'] else (222, 216, 204)
-                textfarbe = (255, 255, 255) if daten['erlaubt'] else (30, 30, 30)
-                pygame.draw.rect(self.screen, farbe, rect, border_radius=12)
-                self.screen.blit(self.font_mittel.render(daten['name'], True, textfarbe), (rect.x + 16, rect.y + 14))
+                self._karte(rect, aktiv=daten['erlaubt'])
+                text = self.font_mittel.render(daten['name'], True, FARBE_TEXT_DUNKEL)
+                self.screen.blit(text, (rect.x + 20, rect.y + (rect.height - text.get_height()) // 2))
+                haken_mitte = (rect.right - 34, rect.centery)
+                pygame.draw.circle(self.screen, (255, 255, 255) if daten['erlaubt'] else FARBE_SEITE, haken_mitte, 16)
+                pygame.draw.circle(self.screen, FARBE_AKZENT if daten['erlaubt'] else FARBE_KARTE_RAND,
+                                    haken_mitte, 16, width=2)
+                if daten['erlaubt']:
+                    self._haken_zeichnen(haken_mitte, FARBE_AKZENT_DUNKEL)
             elif art == 'video_toggle':
                 an = einstellung_holen(self.conn, 'videos_aktiv', '1') == '1'
                 self._zeile_toggle(rect, self.t('videos_label'), an)
@@ -453,7 +533,7 @@ class App:
         x, y = pos
         y_inhalt = y + self.settings_scroll
         for art, daten, row_y in self._settings_zeilen:
-            rect = pygame.Rect(24, row_y, self.w - 48, 56)
+            rect = pygame.Rect(28, row_y, self.w - 56, 60)
             if not rect.collidepoint(x, y_inhalt):
                 continue
             if art == 'person':
@@ -466,10 +546,9 @@ class App:
             elif art == 'dauer_stepper':
                 self._stepper_tap(x, rect, 'anzeige_dauer_sek', 2, 120, 1)
             elif art == 'uebergang_typ':
-                typen = ['fade', 'slide', 'kenburns', 'rotate']
                 aktuell = einstellung_holen(self.conn, 'uebergang_typ', 'fade')
-                idx = (typen.index(aktuell) + 1) % len(typen) if aktuell in typen else 0
-                einstellung_setzen(self.conn, 'uebergang_typ', typen[idx])
+                idx = (UEBERGANG_TYPEN.index(aktuell) + 1) % len(UEBERGANG_TYPEN) if aktuell in UEBERGANG_TYPEN else 0
+                einstellung_setzen(self.conn, 'uebergang_typ', UEBERGANG_TYPEN[idx])
             elif art == 'uebergang_dauer':
                 self._stepper_tap(x, rect, 'uebergang_dauer_ms', 200, 5000, 100)
             elif art == 'sprache':
@@ -506,8 +585,12 @@ class App:
 
     # ── Fotos verwalten ──────────────────────────────────────────────
 
+    FV_SPALTEN = 4
+    FV_REIHEN = 2
+    FV_RAND = 20
+
     def fotos_verwalten_laden_seite(self):
-        pro_seite = 12
+        pro_seite = self.FV_SPALTEN * self.FV_REIHEN
         gesamt = self.conn.execute("SELECT COUNT(*) as c FROM fotos").fetchone()['c']
         zeilen = self.conn.execute(
             "SELECT * FROM fotos ORDER BY datum DESC LIMIT ? OFFSET ?",
@@ -523,8 +606,8 @@ class App:
             try:
                 from PIL import Image
                 bild = Image.open(os.path.join(FOTOS_DIR, dateiname))
-                bild.thumbnail((220, 220))
-                bild.convert('RGB').save(thumb_pfad, 'JPEG', quality=80)
+                bild.thumbnail((320, 320))
+                bild.convert('RGB').save(thumb_pfad, 'JPEG', quality=85)
             except Exception:
                 return None
         try:
@@ -532,55 +615,83 @@ class App:
         except Exception:
             return None
 
+    def _fv_zellen_geometrie(self):
+        spalten, reihen, rand = self.FV_SPALTEN, self.FV_REIHEN, self.FV_RAND
+        kopf_hoehe = 70
+        fuss_hoehe = 86
+        verfuegbare_breite = self.w - rand * (spalten + 1)
+        verfuegbare_hoehe = self.h - kopf_hoehe - fuss_hoehe - rand * (reihen - 1)
+        zelle = min(verfuegbare_breite // spalten, verfuegbare_hoehe // reihen)
+        raster_breite = spalten * zelle + (spalten - 1) * rand
+        start_x = (self.w - raster_breite) // 2
+        return zelle, rand, start_x, kopf_hoehe
+
     def fotos_verwalten_zeichnen(self):
         self.screen.fill(FARBE_SEITE)
-        spalten = 4
-        rand = 16
-        zelle = (self.w - rand * (spalten + 1)) // spalten
+        titel = self.font_gross.render(self.t('fotos_verwalten_titel'), True, FARBE_TEXT_DUNKEL)
+        self.screen.blit(titel, (28, 20))
+
+        zelle, rand, start_x, kopf_hoehe = self._fv_zellen_geometrie()
         self._fv_rects = []
 
         for i, foto in enumerate(self._fotos_verwalten_liste):
-            col, row = i % spalten, i // spalten
-            x = rand + col * (zelle + rand)
-            y = rand + row * (zelle + rand)
+            col, row = i % self.FV_SPALTEN, i // self.FV_SPALTEN
+            x = start_x + col * (zelle + rand)
+            y = kopf_hoehe + row * (zelle + rand)
             rect = pygame.Rect(x, y, zelle, zelle)
             self._fv_rects.append((rect, foto))
 
             thumb = None if foto['ist_video'] else self.thumbnail_laden(foto['lokaler_dateiname'])
-            pygame.draw.rect(self.screen, (20, 20, 20), rect, border_radius=8)
+            pygame.draw.rect(self.screen, FARBE_KARTE, rect, border_radius=14)
+            pygame.draw.rect(self.screen, FARBE_KARTE_RAND, rect, width=2, border_radius=14)
             if thumb:
-                skala = min(zelle / thumb.get_width(), zelle / thumb.get_height())
+                innen = rect.inflate(-6, -6)
+                skala = min(innen.width / thumb.get_width(), innen.height / thumb.get_height())
                 groesse = (max(1, int(thumb.get_width() * skala)), max(1, int(thumb.get_height() * skala)))
                 thumb = pygame.transform.smoothscale(thumb, groesse)
-                self.screen.blit(thumb, thumb.get_rect(center=rect.center))
+                thumb_rect = thumb.get_rect(center=rect.center)
+                # abgerundete Ecken der Kachel respektieren: leicht kleiner clippen
+                self.screen.set_clip(rect.inflate(-4, -4))
+                self.screen.blit(thumb, thumb_rect)
+                self.screen.set_clip(None)
             elif foto['ist_video']:
-                pygame.draw.polygon(self.screen, (255, 255, 255), [
-                    (rect.centerx - 14, rect.centery - 20),
-                    (rect.centerx - 14, rect.centery + 20),
-                    (rect.centerx + 18, rect.centery),
+                pygame.draw.circle(self.screen, FARBE_SEITE, rect.center, 26)
+                pygame.draw.polygon(self.screen, FARBE_AKZENT_DUNKEL, [
+                    (rect.centerx - 8, rect.centery - 13),
+                    (rect.centerx - 8, rect.centery + 13),
+                    (rect.centerx + 14, rect.centery),
                 ])
 
-            stern_farbe = (245, 158, 11) if foto['favorit'] else (230, 230, 230)
-            stern_center = (rect.right - 22, rect.top + 22)
-            pygame.draw.circle(self.screen, (0, 0, 0), stern_center, 17)
-            pygame.draw.circle(self.screen, stern_farbe, stern_center, 13)
+            stern_center = (rect.right - 24, rect.top + 24)
+            stern_farbe = (245, 158, 11) if foto['favorit'] else FARBE_KARTE_RAND
+            pygame.draw.circle(self.screen, (255, 255, 255), stern_center, 18)
+            pygame.draw.circle(self.screen, stern_farbe, stern_center, 18, width=0 if foto['favorit'] else 2)
+            self._stern_zeichnen(stern_center, 10, (255, 255, 255) if foto['favorit'] else (200, 200, 205))
 
         unten_y = self.h - 70
-        self._fv_zurueck_rect = pygame.Rect(16, unten_y, 140, 54)
-        self._fv_weiter_rect = pygame.Rect(self.w - 156, unten_y, 140, 54)
-        self._fv_einst_rect = pygame.Rect(self.w // 2 - 90, unten_y, 180, 54)
+        self._fv_zurueck_rect = pygame.Rect(20, unten_y, 150, 54)
+        self._fv_weiter_rect = pygame.Rect(self.w - 170, unten_y, 150, 54)
+        self._fv_einst_rect = pygame.Rect(self.w // 2 - 100, unten_y, 200, 54)
         self._zeile_button(self._fv_einst_rect, self.t('zu_einstellungen'), akzent=True)
         if self.fotos_seite > 0:
             self._zeile_button(self._fv_zurueck_rect, self.t('zurueck'))
         if self._fotos_verwalten_hat_weiter:
             self._zeile_button(self._fv_weiter_rect, self.t('weiter'))
 
+    def _stern_zeichnen(self, center, radius, farbe):
+        punkte = []
+        for i in range(10):
+            winkel = math.pi / 2 + i * math.pi / 5
+            r = radius if i % 2 == 0 else radius * 0.45
+            punkte.append((center[0] + math.cos(winkel) * r, center[1] - math.sin(winkel) * r))
+        pygame.draw.polygon(self.screen, farbe, punkte)
+
     def fotos_verwalten_event(self, ev):
         if ev.type != pygame.MOUSEBUTTONDOWN:
             return
         pos = ev.pos
         for rect, foto in self._fv_rects:
-            stern_rect = pygame.Rect(rect.right - 39, rect.top + 5, 34, 34)
+            stern_rect = pygame.Rect(rect.right - 42, rect.top + 6, 36, 36)
             if stern_rect.collidepoint(pos):
                 self.conn.execute("UPDATE fotos SET favorit = 1 - favorit WHERE id=?", (foto['id'],))
                 self.conn.commit()
