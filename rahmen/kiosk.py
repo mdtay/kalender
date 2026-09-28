@@ -1,0 +1,633 @@
+"""
+Natives Bilderrahmen-Kiosk ohne Browser/Webserver.
+
+Laeuft plattformuebergreifend: unter Windows als normales Fenster zum
+lokalen Entwickeln/Testen, unter Linux (Rahmen-Pi) im Vollbild via X11.
+Liest/schreibt direkt in rahmen.db - dieselbe Datenbank, die rahmen/sync.py
+befuellt. Kein Flask, kein HTTP, kein Chromium.
+"""
+import math
+import os
+import random
+import shutil
+import sqlite3
+import subprocess
+import sys
+
+import pygame
+
+from i18n import t
+
+RAHMEN_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(RAHMEN_DIR, 'rahmen.db')
+THUMBS_DIR = os.path.join(RAHMEN_DIR, 'thumbnails')
+IST_LINUX = sys.platform.startswith('linux')
+FOTOS_DIR = os.environ.get(
+    'RAHMEN_FOTOS_DIR',
+    '/mnt/rahmen-fotos' if IST_LINUX else os.path.join(RAHMEN_DIR, 'fotos_test')
+)
+
+FOTO_REFRESH_INTERVALL_MS = 60 * 60 * 1000
+ZAHNRAD_ANZEIGE_MS = 6000
+FPS = 30
+
+FARBE_HINTERGRUND = (0, 0, 0)
+FARBE_TEXT = (240, 240, 240)
+FARBE_TEXT_GEDAEMPFT = (150, 150, 150)
+FARBE_FLAECHE = (45, 45, 45)
+FARBE_FLAECHE_AKTIV = (50, 100, 190)
+FARBE_AKZENT = (59, 130, 246)
+FARBE_SEITE = (245, 240, 232)
+
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS einstellungen (
+            schluessel TEXT PRIMARY KEY,
+            wert TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS personen_cache (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            erlaubt INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS fotos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            quelle_bild_id INTEGER NOT NULL UNIQUE,
+            lokaler_dateiname TEXT NOT NULL,
+            datum TEXT NOT NULL,
+            ist_video INTEGER NOT NULL DEFAULT 0,
+            favorit INTEGER NOT NULL DEFAULT 0,
+            synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    ''')
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('sprache', 'de')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('anzeige_dauer_sek', '8')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_typ', 'fade')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_dauer_ms', '800')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('videos_aktiv', '1')")
+    conn.commit()
+    conn.close()
+
+
+def bytes_human(b):
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if b < 1024:
+            return f"{b:.1f} {unit}"
+        b /= 1024
+    return f"{b:.1f} PB"
+
+
+def einstellung_holen(conn, schluessel, default):
+    row = conn.execute("SELECT wert FROM einstellungen WHERE schluessel=?", (schluessel,)).fetchone()
+    return row['wert'] if row else default
+
+
+def einstellung_setzen(conn, schluessel, wert):
+    conn.execute("INSERT OR REPLACE INTO einstellungen VALUES (?, ?)", (schluessel, str(wert)))
+    conn.commit()
+
+
+def fotos_laden(conn):
+    videos_aktiv = einstellung_holen(conn, 'videos_aktiv', '1') == '1'
+    if videos_aktiv:
+        rows = conn.execute("SELECT id, lokaler_dateiname, ist_video, favorit FROM fotos").fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, lokaler_dateiname, ist_video, favorit FROM fotos WHERE ist_video=0"
+        ).fetchall()
+    fotos = [dict(r) for r in rows]
+    random.shuffle(fotos)
+    return fotos
+
+
+class App:
+    def __init__(self):
+        os.makedirs(FOTOS_DIR, exist_ok=True)
+        pygame.init()
+        pygame.mouse.set_visible(False)
+
+        if IST_LINUX:
+            self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            for cmd in (['xset', 's', 'off'], ['xset', '-dpms'], ['xset', 's', 'noblank']):
+                try:
+                    subprocess.run(cmd, check=False)
+                except FileNotFoundError:
+                    pass
+        else:
+            self.screen = pygame.display.set_mode((1024, 600))
+        pygame.display.set_caption('Bilderrahmen')
+
+        self.w, self.h = self.screen.get_size()
+        self.clock = pygame.time.Clock()
+
+        schrift = 'dejavusans,arial,sans-serif'
+        self.font_gross = pygame.font.SysFont(schrift, 34)
+        self.font_mittel = pygame.font.SysFont(schrift, 24)
+        self.font_klein = pygame.font.SysFont(schrift, 18)
+
+        init_db()
+        self.conn = get_db()
+        self.sprache = einstellung_holen(self.conn, 'sprache', 'de')
+
+        self.state = 'SLIDESHOW'
+        self.running = True
+
+        # Diashow-Zustand
+        self.fotos = fotos_laden(self.conn)
+        self.foto_index = 0
+        self.aktuelle_surface = None
+        self.naechste_surface = None
+        self.in_uebergang = False
+        self.uebergang_start = 0
+        self.uebergang_dauer = int(einstellung_holen(self.conn, 'uebergang_dauer_ms', '800'))
+        self.anzeige_start = 0
+        self.letztes_foto_laden = pygame.time.get_ticks()
+        self.zahnrad_bis = 0
+
+        # Einstellungen-Zustand
+        self._settings_zeilen = []
+        self._settings_inhalt_hoehe = self.h
+        self.settings_scroll = 0
+        self.settings_drag_start = None
+        self.settings_drag_start_scroll = 0
+        self.settings_drag_bewegt = False
+
+        # Fotos-verwalten-Zustand
+        self.fotos_seite = 0
+        self._fotos_verwalten_liste = []
+        self._fotos_verwalten_hat_weiter = False
+        self._fv_rects = []
+        self._fv_zurueck_rect = None
+        self._fv_weiter_rect = None
+        self._fv_einst_rect = None
+
+    def t(self, schluessel):
+        return t(schluessel, self.sprache)
+
+    # ── Diashow ──────────────────────────────────────────────────────
+
+    def bild_skaliert_laden(self, pfad):
+        try:
+            img = pygame.image.load(pfad).convert()
+        except Exception:
+            return None
+        iw, ih = img.get_size()
+        if iw == 0 or ih == 0:
+            return None
+        skala = min(self.w / iw, self.h / ih)
+        groesse = (max(1, int(iw * skala)), max(1, int(ih * skala)))
+        return pygame.transform.smoothscale(img, groesse)
+
+    def video_abspielen(self, pfad):
+        try:
+            subprocess.run(
+                ['mpv', '--fullscreen', '--really-quiet', '--quiet', '--no-input-default-bindings', pfad],
+                check=False
+            )
+        except FileNotFoundError:
+            pass  # mpv fehlt (z.B. lokaler Windows-Testlauf) - Video einfach ueberspringen
+
+    def naechstes_foto_starten(self):
+        if not self.fotos:
+            self.aktuelle_surface = None
+            return
+        versuche = 0
+        while versuche < len(self.fotos):
+            versuche += 1
+            foto = self.fotos[self.foto_index % len(self.fotos)]
+            self.foto_index += 1
+            pfad = os.path.join(FOTOS_DIR, foto['lokaler_dateiname'])
+            if foto['ist_video']:
+                self.video_abspielen(pfad)
+                continue
+            surface = self.bild_skaliert_laden(pfad)
+            if surface is None:
+                continue
+            self.naechste_surface = surface
+            self.uebergang_dauer = int(einstellung_holen(self.conn, 'uebergang_dauer_ms', '800'))
+            self.uebergang_start = pygame.time.get_ticks()
+            self.in_uebergang = True
+            return
+        self.aktuelle_surface = None
+        self.naechste_surface = None
+
+    def _rect_zentriert(self, surface):
+        return surface.get_rect(center=(self.w // 2, self.h // 2))
+
+    def _uebergang_zeichnen(self, typ, fortschritt):
+        alt, neu = self.aktuelle_surface, self.naechste_surface
+
+        if typ == 'slide':
+            if alt:
+                rect = self._rect_zentriert(alt)
+                rect.x -= int(self.w * fortschritt)
+                self.screen.blit(alt, rect)
+            rect = self._rect_zentriert(neu)
+            rect.x += int(self.w * (1 - fortschritt))
+            self.screen.blit(neu, rect)
+            return
+
+        if typ == 'rotate':
+            if alt:
+                self.screen.blit(alt, self._rect_zentriert(alt))
+            skala = 1.05 - 0.05 * fortschritt
+            winkel = 3 * (1 - fortschritt)
+            gedreht = pygame.transform.rotozoom(neu, winkel, skala)
+            gedreht = gedreht.convert_alpha()
+            gedreht.set_alpha(int(255 * fortschritt))
+            self.screen.blit(gedreht, self._rect_zentriert(gedreht))
+            return
+
+        # 'fade' und 'kenburns' starten beide mit einer Ueberblendung
+        if alt:
+            self.screen.blit(alt, self._rect_zentriert(alt))
+        neu_kopie = neu.copy()
+        neu_kopie.set_alpha(int(255 * fortschritt))
+        self.screen.blit(neu_kopie, self._rect_zentriert(neu_kopie))
+
+    def _bild_zeichnen(self, surface, typ, anzeige_ms):
+        if typ == 'kenburns':
+            dauer = int(einstellung_holen(self.conn, 'anzeige_dauer_sek', '8')) * 1000
+            fortschritt = min(1.0, anzeige_ms / max(1, dauer))
+            skala = 1.0 + 0.15 * fortschritt
+            gezoomt = pygame.transform.smoothscale(
+                surface, (max(1, int(surface.get_width() * skala)), max(1, int(surface.get_height() * skala)))
+            )
+            self.screen.blit(gezoomt, self._rect_zentriert(gezoomt))
+        else:
+            self.screen.blit(surface, self._rect_zentriert(surface))
+
+    def slideshow_update_und_zeichnen(self):
+        jetzt = pygame.time.get_ticks()
+
+        if jetzt - self.letztes_foto_laden > FOTO_REFRESH_INTERVALL_MS:
+            self.fotos = fotos_laden(self.conn)
+            self.letztes_foto_laden = jetzt
+
+        if self.aktuelle_surface is None and self.naechste_surface is None and not self.in_uebergang:
+            self.naechstes_foto_starten()
+
+        self.screen.fill(FARBE_HINTERGRUND)
+
+        if self.aktuelle_surface is None and self.naechste_surface is None:
+            text = self.font_mittel.render(self.t('keine_fotos'), True, FARBE_TEXT_GEDAEMPFT)
+            self.screen.blit(text, text.get_rect(center=(self.w // 2, self.h // 2)))
+            return
+
+        typ = einstellung_holen(self.conn, 'uebergang_typ', 'fade')
+
+        if self.in_uebergang:
+            fortschritt = min(1.0, (jetzt - self.uebergang_start) / max(1, self.uebergang_dauer))
+            self._uebergang_zeichnen(typ, fortschritt)
+            if fortschritt >= 1.0:
+                self.aktuelle_surface = self.naechste_surface
+                self.naechste_surface = None
+                self.in_uebergang = False
+                self.anzeige_start = jetzt
+        else:
+            self._bild_zeichnen(self.aktuelle_surface, typ, jetzt - self.anzeige_start)
+            dauer = int(einstellung_holen(self.conn, 'anzeige_dauer_sek', '8')) * 1000
+            if jetzt - self.anzeige_start > dauer:
+                self.naechstes_foto_starten()
+
+    def zahnrad_rect(self):
+        groesse = 64
+        return pygame.Rect(self.w - groesse - 16, 16, groesse, groesse)
+
+    def _zahnrad_icon_zeichnen(self, center, radius, farbe):
+        pygame.draw.circle(self.screen, farbe, center, radius)
+        pygame.draw.circle(self.screen, (25, 25, 25), center, int(radius * 0.45))
+        for i in range(8):
+            winkel = (2 * math.pi / 8) * i
+            x1 = center[0] + math.cos(winkel) * (radius - 2)
+            y1 = center[1] + math.sin(winkel) * (radius - 2)
+            x2 = center[0] + math.cos(winkel) * (radius + 7)
+            y2 = center[1] + math.sin(winkel) * (radius + 7)
+            pygame.draw.line(self.screen, farbe, (x1, y1), (x2, y2), width=6)
+
+    def zahnrad_zeichnen(self):
+        if pygame.time.get_ticks() > self.zahnrad_bis:
+            return
+        rect = self.zahnrad_rect()
+        self._zahnrad_icon_zeichnen(rect.center, rect.width // 2 - 8, (235, 235, 235))
+
+    def slideshow_event(self, ev):
+        if ev.type != pygame.MOUSEBUTTONDOWN:
+            return
+        jetzt = pygame.time.get_ticks()
+        if jetzt <= self.zahnrad_bis and self.zahnrad_rect().collidepoint(ev.pos):
+            self.state = 'SETTINGS'
+            self.settings_scroll = 0
+            self._settings_zeilen = self.settings_zeilen_aufbauen()
+            return
+        self.zahnrad_bis = jetzt + ZAHNRAD_ANZEIGE_MS
+
+    # ── Einstellungen ────────────────────────────────────────────────
+
+    def settings_zeilen_aufbauen(self):
+        zeilen = []
+        y = 16
+        row_h = 56
+        gap = 10
+
+        zeilen.append(('titel', self.t('personen_titel'), y))
+        y += 44
+        personen = self.conn.execute("SELECT * FROM personen_cache ORDER BY name").fetchall()
+        for p in personen:
+            zeilen.append(('person', dict(p), y))
+            y += row_h + gap
+        if not personen:
+            zeilen.append(('hinweis', self.t('personen_hinweis'), y))
+            y += 36
+        y += 20
+
+        zeilen.append(('video_toggle', None, y)); y += row_h + gap
+        zeilen.append(('dauer_stepper', None, y)); y += row_h + gap
+        zeilen.append(('uebergang_typ', None, y)); y += row_h + gap
+        zeilen.append(('uebergang_dauer', None, y)); y += row_h + gap
+        zeilen.append(('sprache', None, y)); y += row_h + gap
+        y += 16
+        zeilen.append(('status', None, y)); y += 54
+        zeilen.append(('button_fotos', None, y)); y += row_h + gap
+        zeilen.append(('button_diashow', None, y)); y += row_h + gap
+
+        self._settings_inhalt_hoehe = y + 16
+        return zeilen
+
+    def _zeile_toggle(self, rect, label, an):
+        pygame.draw.rect(self.screen, FARBE_FLAECHE, rect, border_radius=12)
+        text = self.font_mittel.render(label, True, FARBE_TEXT)
+        self.screen.blit(text, (rect.x + 16, rect.y + 14))
+        farbe = FARBE_AKZENT if an else (95, 95, 95)
+        pygame.draw.circle(self.screen, farbe, (rect.right - 36, rect.centery), 16)
+
+    def _zeile_stepper(self, rect, label):
+        pygame.draw.rect(self.screen, FARBE_FLAECHE, rect, border_radius=12)
+        text = self.font_mittel.render(label, True, FARBE_TEXT)
+        self.screen.blit(text, (rect.x + 80, rect.y + 14))
+        self.screen.blit(self.font_gross.render('-', True, FARBE_TEXT), (rect.x + 26, rect.y + 6))
+        self.screen.blit(self.font_gross.render('+', True, FARBE_TEXT), (rect.right - 46, rect.y + 6))
+
+    def _zeile_button(self, rect, label, akzent=False):
+        farbe = FARBE_AKZENT if akzent else FARBE_FLAECHE
+        pygame.draw.rect(self.screen, farbe, rect, border_radius=12)
+        text = self.font_mittel.render(label, True, FARBE_TEXT)
+        self.screen.blit(text, text.get_rect(center=rect.center))
+
+    def _status_zeichnen(self, rect):
+        try:
+            usage = shutil.disk_usage(FOTOS_DIR)
+            prozent = round(usage.used / usage.total * 100, 1)
+            speicher_text = (f"{self.t('speicher_belegt')}: "
+                              f"{bytes_human(usage.used)} / {bytes_human(usage.total)} ({prozent}%)")
+        except FileNotFoundError:
+            speicher_text = f"{self.t('speicher_belegt')}: -"
+        letzter = self.conn.execute("SELECT MAX(synced_at) as t FROM fotos").fetchone()['t']
+        sync_text = f"{self.t('letzter_sync')}: {letzter or self.t('noch_nie')}"
+        self.screen.blit(self.font_klein.render(speicher_text, True, FARBE_TEXT_GEDAEMPFT), (rect.x, rect.y))
+        self.screen.blit(self.font_klein.render(sync_text, True, FARBE_TEXT_GEDAEMPFT), (rect.x, rect.y + 24))
+
+    def settings_zeichnen(self):
+        self.screen.fill(FARBE_SEITE)
+        for art, daten, row_y in self._settings_zeilen:
+            y = row_y - self.settings_scroll
+            if y < -60 or y > self.h + 10:
+                continue
+            if art == 'titel':
+                text = self.font_gross.render(daten, True, (30, 30, 30))
+                self.screen.blit(text, (24, y))
+                continue
+            if art == 'hinweis':
+                text = self.font_klein.render(daten, True, (90, 90, 90))
+                self.screen.blit(text, (24, y))
+                continue
+
+            rect = pygame.Rect(24, y, self.w - 48, 56)
+            if art == 'person':
+                farbe = FARBE_FLAECHE_AKTIV if daten['erlaubt'] else (222, 216, 204)
+                textfarbe = (255, 255, 255) if daten['erlaubt'] else (30, 30, 30)
+                pygame.draw.rect(self.screen, farbe, rect, border_radius=12)
+                self.screen.blit(self.font_mittel.render(daten['name'], True, textfarbe), (rect.x + 16, rect.y + 14))
+            elif art == 'video_toggle':
+                an = einstellung_holen(self.conn, 'videos_aktiv', '1') == '1'
+                self._zeile_toggle(rect, self.t('videos_label'), an)
+            elif art == 'dauer_stepper':
+                wert = einstellung_holen(self.conn, 'anzeige_dauer_sek', '8')
+                self._zeile_stepper(rect, f"{self.t('anzeige_dauer_label')}: {wert}s")
+            elif art == 'uebergang_typ':
+                typ = einstellung_holen(self.conn, 'uebergang_typ', 'fade')
+                self._zeile_button(rect, f"{self.t('uebergang_typ_label')}: {self.t('uebergang_' + typ)}")
+            elif art == 'uebergang_dauer':
+                wert = einstellung_holen(self.conn, 'uebergang_dauer_ms', '800')
+                self._zeile_stepper(rect, f"{self.t('uebergang_dauer_label')}: {wert}ms")
+            elif art == 'sprache':
+                spr = einstellung_holen(self.conn, 'sprache', 'de')
+                self._zeile_button(rect, f"{self.t('sprache_label')}: {'Deutsch' if spr == 'de' else 'Türkçe'}")
+            elif art == 'status':
+                self._status_zeichnen(rect)
+            elif art == 'button_fotos':
+                self._zeile_button(rect, self.t('fotos_verwalten_titel'), akzent=True)
+            elif art == 'button_diashow':
+                self._zeile_button(rect, self.t('zur_diashow'), akzent=True)
+
+    def _stepper_tap(self, x, rect, schluessel, minimum, maximum, schritt):
+        aktuell = int(einstellung_holen(self.conn, schluessel, str(minimum)))
+        if x < rect.x + 70:
+            aktuell = max(minimum, aktuell - schritt)
+        elif x > rect.right - 70:
+            aktuell = min(maximum, aktuell + schritt)
+        else:
+            return
+        einstellung_setzen(self.conn, schluessel, aktuell)
+
+    def _settings_tap(self, pos):
+        x, y = pos
+        y_inhalt = y + self.settings_scroll
+        for art, daten, row_y in self._settings_zeilen:
+            rect = pygame.Rect(24, row_y, self.w - 48, 56)
+            if not rect.collidepoint(x, y_inhalt):
+                continue
+            if art == 'person':
+                neu = 0 if daten['erlaubt'] else 1
+                self.conn.execute("UPDATE personen_cache SET erlaubt=? WHERE id=?", (neu, daten['id']))
+                self.conn.commit()
+            elif art == 'video_toggle':
+                aktuell = einstellung_holen(self.conn, 'videos_aktiv', '1')
+                einstellung_setzen(self.conn, 'videos_aktiv', '0' if aktuell == '1' else '1')
+            elif art == 'dauer_stepper':
+                self._stepper_tap(x, rect, 'anzeige_dauer_sek', 2, 120, 1)
+            elif art == 'uebergang_typ':
+                typen = ['fade', 'slide', 'kenburns', 'rotate']
+                aktuell = einstellung_holen(self.conn, 'uebergang_typ', 'fade')
+                idx = (typen.index(aktuell) + 1) % len(typen) if aktuell in typen else 0
+                einstellung_setzen(self.conn, 'uebergang_typ', typen[idx])
+            elif art == 'uebergang_dauer':
+                self._stepper_tap(x, rect, 'uebergang_dauer_ms', 200, 5000, 100)
+            elif art == 'sprache':
+                aktuell = einstellung_holen(self.conn, 'sprache', 'de')
+                neu = 'tr' if aktuell == 'de' else 'de'
+                einstellung_setzen(self.conn, 'sprache', neu)
+                self.sprache = neu
+            elif art == 'button_fotos':
+                self.state = 'FOTOS_VERWALTEN'
+                self.fotos_seite = 0
+                self.fotos_verwalten_laden_seite()
+            elif art == 'button_diashow':
+                self.state = 'SLIDESHOW'
+                self.fotos = fotos_laden(self.conn)
+            self._settings_zeilen = self.settings_zeilen_aufbauen()
+            return
+
+    def settings_event(self, ev):
+        if ev.type == pygame.MOUSEBUTTONDOWN:
+            self.settings_drag_start = ev.pos
+            self.settings_drag_start_scroll = self.settings_scroll
+            self.settings_drag_bewegt = False
+        elif ev.type == pygame.MOUSEMOTION and self.settings_drag_start is not None:
+            dy = ev.pos[1] - self.settings_drag_start[1]
+            if abs(dy) > 4:
+                self.settings_drag_bewegt = True
+            max_scroll = max(0, self._settings_inhalt_hoehe - self.h)
+            self.settings_scroll = min(max_scroll, max(0, self.settings_drag_start_scroll - dy))
+        elif ev.type == pygame.MOUSEBUTTONUP:
+            start = self.settings_drag_start
+            self.settings_drag_start = None
+            if start is not None and not self.settings_drag_bewegt:
+                self._settings_tap(ev.pos)
+
+    # ── Fotos verwalten ──────────────────────────────────────────────
+
+    def fotos_verwalten_laden_seite(self):
+        pro_seite = 12
+        gesamt = self.conn.execute("SELECT COUNT(*) as c FROM fotos").fetchone()['c']
+        zeilen = self.conn.execute(
+            "SELECT * FROM fotos ORDER BY datum DESC LIMIT ? OFFSET ?",
+            (pro_seite, self.fotos_seite * pro_seite)
+        ).fetchall()
+        self._fotos_verwalten_liste = [dict(r) for r in zeilen]
+        self._fotos_verwalten_hat_weiter = (self.fotos_seite + 1) * pro_seite < gesamt
+
+    def thumbnail_laden(self, dateiname):
+        os.makedirs(THUMBS_DIR, exist_ok=True)
+        thumb_pfad = os.path.join(THUMBS_DIR, dateiname)
+        if not os.path.exists(thumb_pfad):
+            try:
+                from PIL import Image
+                bild = Image.open(os.path.join(FOTOS_DIR, dateiname))
+                bild.thumbnail((220, 220))
+                bild.convert('RGB').save(thumb_pfad, 'JPEG', quality=80)
+            except Exception:
+                return None
+        try:
+            return pygame.image.load(thumb_pfad).convert()
+        except Exception:
+            return None
+
+    def fotos_verwalten_zeichnen(self):
+        self.screen.fill(FARBE_SEITE)
+        spalten = 4
+        rand = 16
+        zelle = (self.w - rand * (spalten + 1)) // spalten
+        self._fv_rects = []
+
+        for i, foto in enumerate(self._fotos_verwalten_liste):
+            col, row = i % spalten, i // spalten
+            x = rand + col * (zelle + rand)
+            y = rand + row * (zelle + rand)
+            rect = pygame.Rect(x, y, zelle, zelle)
+            self._fv_rects.append((rect, foto))
+
+            thumb = None if foto['ist_video'] else self.thumbnail_laden(foto['lokaler_dateiname'])
+            pygame.draw.rect(self.screen, (20, 20, 20), rect, border_radius=8)
+            if thumb:
+                skala = min(zelle / thumb.get_width(), zelle / thumb.get_height())
+                groesse = (max(1, int(thumb.get_width() * skala)), max(1, int(thumb.get_height() * skala)))
+                thumb = pygame.transform.smoothscale(thumb, groesse)
+                self.screen.blit(thumb, thumb.get_rect(center=rect.center))
+            elif foto['ist_video']:
+                pygame.draw.polygon(self.screen, (255, 255, 255), [
+                    (rect.centerx - 14, rect.centery - 20),
+                    (rect.centerx - 14, rect.centery + 20),
+                    (rect.centerx + 18, rect.centery),
+                ])
+
+            stern_farbe = (245, 158, 11) if foto['favorit'] else (230, 230, 230)
+            stern_center = (rect.right - 22, rect.top + 22)
+            pygame.draw.circle(self.screen, (0, 0, 0), stern_center, 17)
+            pygame.draw.circle(self.screen, stern_farbe, stern_center, 13)
+
+        unten_y = self.h - 70
+        self._fv_zurueck_rect = pygame.Rect(16, unten_y, 140, 54)
+        self._fv_weiter_rect = pygame.Rect(self.w - 156, unten_y, 140, 54)
+        self._fv_einst_rect = pygame.Rect(self.w // 2 - 90, unten_y, 180, 54)
+        self._zeile_button(self._fv_einst_rect, self.t('zu_einstellungen'), akzent=True)
+        if self.fotos_seite > 0:
+            self._zeile_button(self._fv_zurueck_rect, self.t('zurueck'))
+        if self._fotos_verwalten_hat_weiter:
+            self._zeile_button(self._fv_weiter_rect, self.t('weiter'))
+
+    def fotos_verwalten_event(self, ev):
+        if ev.type != pygame.MOUSEBUTTONDOWN:
+            return
+        pos = ev.pos
+        for rect, foto in self._fv_rects:
+            stern_rect = pygame.Rect(rect.right - 39, rect.top + 5, 34, 34)
+            if stern_rect.collidepoint(pos):
+                self.conn.execute("UPDATE fotos SET favorit = 1 - favorit WHERE id=?", (foto['id'],))
+                self.conn.commit()
+                self.fotos_verwalten_laden_seite()
+                return
+        if self._fv_zurueck_rect and self._fv_zurueck_rect.collidepoint(pos) and self.fotos_seite > 0:
+            self.fotos_seite -= 1
+            self.fotos_verwalten_laden_seite()
+            return
+        if self._fv_weiter_rect and self._fv_weiter_rect.collidepoint(pos) and self._fotos_verwalten_hat_weiter:
+            self.fotos_seite += 1
+            self.fotos_verwalten_laden_seite()
+            return
+        if self._fv_einst_rect and self._fv_einst_rect.collidepoint(pos):
+            self.state = 'SETTINGS'
+            self._settings_zeilen = self.settings_zeilen_aufbauen()
+
+    # ── Hauptschleife ────────────────────────────────────────────────
+
+    def run(self):
+        while self.running:
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    self.running = False
+                elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE and not IST_LINUX:
+                    self.running = False
+                elif self.state == 'SLIDESHOW':
+                    self.slideshow_event(ev)
+                elif self.state == 'SETTINGS':
+                    self.settings_event(ev)
+                elif self.state == 'FOTOS_VERWALTEN':
+                    self.fotos_verwalten_event(ev)
+
+            if self.state == 'SLIDESHOW':
+                self.slideshow_update_und_zeichnen()
+                self.zahnrad_zeichnen()
+            elif self.state == 'SETTINGS':
+                self.settings_zeichnen()
+            elif self.state == 'FOTOS_VERWALTEN':
+                self.fotos_verwalten_zeichnen()
+
+            pygame.display.flip()
+            self.clock.tick(FPS)
+
+        self.conn.close()
+        pygame.quit()
+
+
+if __name__ == '__main__':
+    App().run()

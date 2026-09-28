@@ -54,14 +54,15 @@ Falls ein anderer Pfad als `/mnt/rahmen-fotos` gewählt wird: `RAHMEN_FOTOS_DIR`
 in `deploy/rahmen-app.service` und `deploy/rahmen-sync.service` per
 `Environment=RAHMEN_FOTOS_DIR=...` setzen.
 
-**4. Dienste installieren:**
+**4. Dienste installieren** (kein `rahmen-app.service` mehr — die Anzeige
+läuft jetzt als natives `pygame`-Programm direkt über X, kein Webserver
+nötig):
 ```bash
-sudo cp deploy/rahmen-app.service deploy/rahmen-sync.service deploy/rahmen-sync.timer \
+sudo cp deploy/rahmen-sync.service deploy/rahmen-sync.timer \
         deploy/rahmen-nacht-aus.service deploy/rahmen-nacht-aus.timer \
         deploy/rahmen-nacht-an.service deploy/rahmen-nacht-an.timer \
         /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now rahmen-app.service
 sudo systemctl enable --now rahmen-sync.timer
 sudo systemctl enable --now rahmen-nacht-aus.timer rahmen-nacht-an.timer
 ```
@@ -72,13 +73,22 @@ sudo systemctl start rahmen-sync.service
 journalctl -u rahmen-sync.service -n 30
 ```
 
-**6. Chromium-Kiosk** — auf Raspberry Pi OS **Lite** gibt es keinen fertigen
-Desktop, `raspi-config`s "Desktop Autologin" (B4) bringt daher nichts (kein
-Desktop-Paket installiert). Stattdessen minimales X + `startx` beim Login:
+**6. Kiosk-Anzeige (pygame, kein Browser)** — auf Raspberry Pi OS **Lite**
+gibt es keinen fertigen Desktop. Wir brauchen nur ein minimales X für Touch-
+Eingabe + `pygame`, kein Chromium, kein Webserver:
 
 ```bash
 sudo raspi-config nonint do_boot_behaviour B2   # Konsolen-Autologin
-sudo apt install -y xserver-xorg xinit x11-xserver-utils chromium unclutter
+sudo apt install -y xserver-xorg xinit python3-pygame python3-pil mpv
+```
+`python3-pygame`/`python3-pil` landen im System-Python, nicht automatisch im
+venv — venv deshalb mit `--system-site-packages` anlegen (spart das
+langsame Kompilieren von pygame per pip auf dem Pi 3):
+```bash
+cd /home/tay/kalender
+rm -rf venv
+python3 -m venv --system-site-packages venv
+venv/bin/python -c "import pygame, PIL; print('ok')"
 ```
 ```bash
 cat >> ~/.bash_profile << 'EOF'
@@ -88,31 +98,16 @@ fi
 EOF
 cat > ~/.xinitrc << 'EOF'
 #!/bin/bash
-exec ~/rahmen-kiosk-start.sh
+/home/tay/kalender/venv/bin/python /home/tay/kalender/rahmen/kiosk.py > /home/tay/kiosk.log 2>&1
 EOF
 chmod +x ~/.xinitrc
 ```
-`~/rahmen-kiosk-start.sh` (Kiosk-Startskript, wartet auf die lokale App und
-startet Chromium im Vollbild):
+Kein `curl`-Warteskript mehr nötig (das gab es nur, weil vorher auf den
+Flask-Webserver gewartet werden musste) — `kiosk.py` öffnet direkt sein
+eigenes Vollbildfenster. Stdout/stderr geht nach `~/kiosk.log`, dort zuerst
+nachschauen, falls der Bildschirm schwarz bleibt oder "Kein Signal" zeigt.
+
+Kiosk neu starten (kein volles Reboot nötig):
 ```bash
-cat > ~/rahmen-kiosk-start.sh << 'EOF'
-#!/bin/bash
-until curl -sf http://localhost:8600/ >/dev/null; do sleep 1; done
-xset s off; xset -dpms; xset s noblank
-unclutter -idle 0 &
-chromium --no-memcheck --kiosk --noerrdialogs --disable-infobars \
-  --disable-session-crashed-bubble \
-  --check-for-update-interval=31536000 \
-  --autoplay-policy=no-user-gesture-required \
-  http://localhost:8600/
-EOF
-chmod +x ~/rahmen-kiosk-start.sh
+sudo systemctl restart getty@tty1.service
 ```
-`--no-memcheck` ist nötig, weil der Pi 3 A+ mit 512MB RAM sonst bei jedem
-Start den Klick-Dialog "It is not recommended to run Chromium on devices
-with less than 1GB of RAM." zeigt (steht so im `/usr/bin/chromium`-Wrapper-
-Skript) — im Kiosk-Betrieb ohne Bedienperson darf da nichts hängenbleiben.
-**Wichtig:** Das Paket heißt auf diesem Debian-trixie-basierten Image
-`chromium` (Binary `/usr/bin/chromium`), **nicht** `chromium-browser` — mit
-`which chromium` prüfen, falls sich das in einer künftigen Image-Version
-wieder ändert.
