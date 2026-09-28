@@ -1,0 +1,9 @@
+[Unit]
+Description=Kalender Bilderrahmen Sync (holt neue Fotos vom Haupt-Pi)
+After=network.target
+
+[Service]
+Type=oneshot
+User=tay
+WorkingDirectory=/home/tay/kalender/rahmen
+ExecStart=/home/tay/kalender/venv/bin/python /home/tay/kalender/rahmen/sync.py

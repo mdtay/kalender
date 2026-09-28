@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block inhalt %}
+<div class="fotos-verwalten-seite">
+    <h1>{{ t('fotos_verwalten_titel') }}</h1>
+    <p class="hinweis">{{ t('fotos_verwalten_hinweis') }}</p>
+
+    {% if not fotos %}
+    <p class="hinweis">{{ t('keine_fotos') }}</p>
+    {% endif %}
+
+    <div class="fotos-raster">
+        {% for f in fotos %}
+        <div class="foto-kachel">
+            {% if f.ist_video %}
+            <video src="{{ url_for('foto_datei', dateiname=f.lokaler_dateiname) }}" muted></video>
+            {% else %}
+            <img src="{{ url_for('foto_datei', dateiname=f.lokaler_dateiname) }}" alt="">
+            {% endif %}
+            <form method="POST" action="{{ url_for('foto_favorit', foto_id=f.id) }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button type="submit" class="favorit-stern {% if f.favorit %}aktiv{% endif %}">★</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="pagination">
+        {% if seite > 1 %}
+        <a href="{{ url_for('fotos_verwalten', seite=seite-1) }}" class="grosser-button">{{ t('zurueck') }}</a>
+        {% endif %}
+        {% if hat_weiter %}
+        <a href="{{ url_for('fotos_verwalten', seite=seite+1) }}" class="grosser-button">{{ t('weiter') }}</a>
+        {% endif %}
+    </div>
+
+    <a href="{{ url_for('einstellungen') }}" class="grosser-button link-button">{{ t('zu_einstellungen') }}</a>
+</div>
+{% endblock %}

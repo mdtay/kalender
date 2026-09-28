@@ -1,0 +1,10 @@
+[Unit]
+Description=Startet den Bilderrahmen-Export einmal pro Nacht
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+AccuracySec=5min
+
+[Install]
+WantedBy=timers.target

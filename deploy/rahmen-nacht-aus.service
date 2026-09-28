@@ -1,0 +1,6 @@
+[Unit]
+Description=Bilderrahmen Display ausschalten (Nachtmodus)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/vcgencmd display_power 0

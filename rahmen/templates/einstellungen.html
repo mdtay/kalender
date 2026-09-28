@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block inhalt %}
+<div class="einstellungen-seite">
+    <h1>{{ t('einstellungen_titel') }}</h1>
+
+    <form method="POST" class="einstellungen-form">
+        <section class="einst-abschnitt">
+            <h2>{{ t('personen_titel') }}</h2>
+            <p class="hinweis">{{ t('personen_hinweis') }}</p>
+            <div class="personen-raster">
+                {% for p in alle_personen %}
+                <label class="personen-kachel">
+                    <input type="checkbox" name="personen" value="{{ p.id }}" {% if p.erlaubt %}checked{% endif %}>
+                    <span>{{ p.name }}</span>
+                </label>
+                {% endfor %}
+                {% if not alle_personen %}
+                <p class="hinweis">{{ t('keine_fotos') }}</p>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="einst-abschnitt">
+            <label class="grosse-checkbox">
+                <input type="checkbox" name="videos_aktiv" {% if einst.videos_aktiv == '1' %}checked{% endif %}>
+                <span>{{ t('videos_label') }}</span>
+            </label>
+        </section>
+
+        <section class="einst-abschnitt">
+            <label class="einst-feld">
+                {{ t('anzeige_dauer_label') }}
+                <input type="number" name="anzeige_dauer_sek" min="2" max="120"
+                       value="{{ einst.anzeige_dauer_sek }}">
+            </label>
+
+            <label class="einst-feld">
+                {{ t('uebergang_typ_label') }}
+                <select name="uebergang_typ">
+                    <option value="fade" {% if einst.uebergang_typ == 'fade' %}selected{% endif %}>{{ t('uebergang_fade') }}</option>
+                    <option value="slide" {% if einst.uebergang_typ == 'slide' %}selected{% endif %}>{{ t('uebergang_slide') }}</option>
+                    <option value="kenburns" {% if einst.uebergang_typ == 'kenburns' %}selected{% endif %}>{{ t('uebergang_kenburns') }}</option>
+                    <option value="rotate" {% if einst.uebergang_typ == 'rotate' %}selected{% endif %}>{{ t('uebergang_rotate') }}</option>
+                </select>
+            </label>
+
+            <label class="einst-feld">
+                {{ t('uebergang_dauer_label') }}
+                <input type="number" name="uebergang_dauer_ms" min="200" max="5000" step="100"
+                       value="{{ einst.uebergang_dauer_ms }}">
+            </label>
+
+            <label class="einst-feld">
+                {{ t('sprache_label') }}
+                <select name="sprache">
+                    <option value="de" {% if sprache == 'de' %}selected{% endif %}>Deutsch</option>
+                    <option value="tr" {% if sprache == 'tr' %}selected{% endif %}>Türkçe</option>
+                </select>
+            </label>
+        </section>
+
+        <button type="submit" class="grosser-button">{{ t('einstellungen_speichern') }}</button>
+    </form>
+
+    <section class="einst-abschnitt status-box">
+        <p>{{ t('speicher_belegt') }}:
+            {% if speicher %}{{ speicher.belegt }} / {{ speicher.gesamt }} ({{ speicher.prozent }}%)
+            {% else %}–{% endif %}
+        </p>
+        <p>{{ t('letzter_sync') }}: {{ letzter_sync or t('noch_nie') }}</p>
+    </section>
+
+    <a href="{{ url_for('fotos_verwalten') }}" class="grosser-button link-button">{{ t('fotos_verwalten_titel') }}</a>
+    <a href="{{ url_for('diashow') }}" class="grosser-button link-button">{{ t('zur_diashow') }}</a>
+</div>
+{% endblock %}

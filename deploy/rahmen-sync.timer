@@ -1,0 +1,10 @@
+[Unit]
+Description=Startet den Bilderrahmen-Sync einmal pro Nacht (nach dem Export auf dem Haupt-Pi)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+AccuracySec=5min
+
+[Install]
+WantedBy=timers.target

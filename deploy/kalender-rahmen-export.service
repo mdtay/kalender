@@ -1,0 +1,9 @@
+[Unit]
+Description=Kalender Bilderrahmen-Export (naechtliches Manifest fuer Sync)
+After=network.target
+
+[Service]
+Type=oneshot
+User=tay
+WorkingDirectory=/home/tay/kalender
+ExecStart=/home/tay/kalender/venv/bin/python /home/tay/kalender/rahmen_export.py

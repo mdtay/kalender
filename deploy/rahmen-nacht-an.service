@@ -1,0 +1,6 @@
+[Unit]
+Description=Bilderrahmen Display einschalten (Ende Nachtmodus)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/vcgencmd display_power 1
