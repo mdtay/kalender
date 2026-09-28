@@ -32,7 +32,40 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    init_db(conn)
     return conn
+
+
+def init_db(conn):
+    """Legt das Schema an, falls rahmen/app.py auf diesem Geraet noch nie
+    gelaufen ist (z.B. wenn der naechtliche Sync-Timer vor dem ersten
+    App-Start feuert). Gleiches Schema wie in rahmen/app.py."""
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS einstellungen (
+            schluessel TEXT PRIMARY KEY,
+            wert TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS personen_cache (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            erlaubt INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS fotos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            quelle_bild_id INTEGER NOT NULL UNIQUE,
+            lokaler_dateiname TEXT NOT NULL,
+            datum TEXT NOT NULL,
+            ist_video INTEGER NOT NULL DEFAULT 0,
+            favorit INTEGER NOT NULL DEFAULT 0,
+            synced_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    ''')
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('sprache', 'de')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('anzeige_dauer_sek', '8')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_typ', 'fade')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_dauer_ms', '800')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('videos_aktiv', '1')")
+    conn.commit()
 
 
 def manifest_holen():
