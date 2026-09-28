@@ -99,7 +99,7 @@ cat > ~/rahmen-kiosk-start.sh << 'EOF'
 #!/bin/bash
 until curl -sf http://localhost:8600/ >/dev/null; do sleep 1; done
 xset s off; xset -dpms; xset s noblank
-chromium --kiosk --noerrdialogs --disable-infobars \
+chromium --no-memcheck --kiosk --noerrdialogs --disable-infobars \
   --disable-session-crashed-bubble \
   --check-for-update-interval=31536000 \
   --autoplay-policy=no-user-gesture-required \
@@ -107,6 +107,10 @@ chromium --kiosk --noerrdialogs --disable-infobars \
 EOF
 chmod +x ~/rahmen-kiosk-start.sh
 ```
+`--no-memcheck` ist nötig, weil der Pi 3 A+ mit 512MB RAM sonst bei jedem
+Start den Klick-Dialog "It is not recommended to run Chromium on devices
+with less than 1GB of RAM." zeigt (steht so im `/usr/bin/chromium`-Wrapper-
+Skript) — im Kiosk-Betrieb ohne Bedienperson darf da nichts hängenbleiben.
 **Wichtig:** Das Paket heißt auf diesem Debian-trixie-basierten Image
 `chromium` (Binary `/usr/bin/chromium`), **nicht** `chromium-browser` — mit
 `which chromium` prüfen, falls sich das in einer künftigen Image-Version
