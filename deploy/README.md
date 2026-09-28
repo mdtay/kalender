@@ -72,6 +72,42 @@ sudo systemctl start rahmen-sync.service
 journalctl -u rahmen-sync.service -n 30
 ```
 
-**6. Chromium-Kiosk** — siehe Hauptplan; grob: `raspi-config` → Desktop
-Autologin aktivieren, `chromium-browser` installieren, Autostart-Eintrag unter
-`~/.config/autostart/` anlegen, der auf `http://localhost:8600/` zeigt.
+**6. Chromium-Kiosk** — auf Raspberry Pi OS **Lite** gibt es keinen fertigen
+Desktop, `raspi-config`s "Desktop Autologin" (B4) bringt daher nichts (kein
+Desktop-Paket installiert). Stattdessen minimales X + `startx` beim Login:
+
+```bash
+sudo raspi-config nonint do_boot_behaviour B2   # Konsolen-Autologin
+sudo apt install -y xserver-xorg xinit x11-xserver-utils chromium
+```
+```bash
+cat >> ~/.bash_profile << 'EOF'
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+  startx
+fi
+EOF
+cat > ~/.xinitrc << 'EOF'
+#!/bin/bash
+exec ~/rahmen-kiosk-start.sh
+EOF
+chmod +x ~/.xinitrc
+```
+`~/rahmen-kiosk-start.sh` (Kiosk-Startskript, wartet auf die lokale App und
+startet Chromium im Vollbild):
+```bash
+cat > ~/rahmen-kiosk-start.sh << 'EOF'
+#!/bin/bash
+until curl -sf http://localhost:8600/ >/dev/null; do sleep 1; done
+xset s off; xset -dpms; xset s noblank
+chromium --kiosk --noerrdialogs --disable-infobars \
+  --disable-session-crashed-bubble \
+  --check-for-update-interval=31536000 \
+  --autoplay-policy=no-user-gesture-required \
+  http://localhost:8600/
+EOF
+chmod +x ~/rahmen-kiosk-start.sh
+```
+**Wichtig:** Das Paket heißt auf diesem Debian-trixie-basierten Image
+`chromium` (Binary `/usr/bin/chromium`), **nicht** `chromium-browser` — mit
+`which chromium` prüfen, falls sich das in einer künftigen Image-Version
+wieder ändert.
