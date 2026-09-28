@@ -6,6 +6,7 @@ lokalen Entwickeln/Testen, unter Linux (Rahmen-Pi) im Vollbild via X11.
 Liest/schreibt direkt in rahmen.db - dieselbe Datenbank, die rahmen/sync.py
 befuellt. Kein Flask, kein HTTP, kein Chromium.
 """
+import datetime
 import math
 import os
 import random
@@ -13,6 +14,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import traceback
 
 import pygame
 
@@ -21,11 +23,22 @@ from i18n import t
 RAHMEN_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(RAHMEN_DIR, 'rahmen.db')
 THUMBS_DIR = os.path.join(RAHMEN_DIR, 'thumbnails')
+FEHLER_LOG = os.path.join(RAHMEN_DIR, 'kiosk_fehler.log')
 IST_LINUX = sys.platform.startswith('linux')
 FOTOS_DIR = os.environ.get(
     'RAHMEN_FOTOS_DIR',
     '/mnt/rahmen-fotos' if IST_LINUX else os.path.join(RAHMEN_DIR, 'fotos_test')
 )
+
+
+def fehler_loggen(kontext):
+    """Schreibt Zeitstempel + Traceback nach kiosk_fehler.log, wirft nie selbst."""
+    try:
+        with open(FEHLER_LOG, 'a', encoding='utf-8') as f:
+            f.write(f"\n[{datetime.datetime.now().isoformat(timespec='seconds')}] {kontext}\n")
+            f.write(traceback.format_exc())
+    except Exception:
+        pass
 
 FOTO_REFRESH_INTERVALL_MS = 60 * 60 * 1000
 ZAHNRAD_ANZEIGE_MS = 6000
@@ -82,6 +95,7 @@ def init_db():
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_typ', 'fade')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_dauer_ms', '800')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('videos_aktiv', '1')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('datum_anzeigen', '1')")
     conn.commit()
     conn.close()
 
@@ -115,9 +129,11 @@ def einstellung_setzen(conn, schluessel, wert):
     conn.commit()
 
 
-UEBERGANG_TYPEN = ['fade', 'slide', 'kenburns', 'rotate', 'random']
-DATUM_EINBLEND_START_MS = 1000
-DATUM_EINBLEND_DAUER_MS = 400
+UEBERGANG_TYPEN_KONKRET = ['fade', 'slide', 'wipe', 'rotate']
+UEBERGANG_TYPEN = UEBERGANG_TYPEN_KONKRET + ['random']
+DATUM_EINBLEND_DAUER_MS = 350
+DATUM_AUSBLEND_START_MS = 3000
+DATUM_AUSBLEND_DAUER_MS = 400
 
 
 def fotos_laden(conn):
@@ -209,7 +225,14 @@ class App:
         iw, ih = img.get_size()
         if iw == 0 or ih == 0:
             return None
-        skala = min(self.w / iw, self.h / ih)
+        if iw > ih:
+            # Querformat: volle Bildschirmbreite nutzen, dafuer oben/unten
+            # ggf. leicht beschneiden statt Balken links/rechts zu zeigen.
+            skala = self.w / iw
+        else:
+            # Hochformat/quadratisch: komplett einpassen (Balken links/rechts),
+            # sonst wuerde zu viel vom Bild oben/unten verloren gehen.
+            skala = min(self.w / iw, self.h / ih)
         groesse = (max(1, int(iw * skala)), max(1, int(ih * skala)))
         return pygame.transform.smoothscale(img, groesse)
 
@@ -242,7 +265,7 @@ class App:
             self.aktuelles_datum = foto.get('datum')
             roh_typ = einstellung_holen(self.conn, 'uebergang_typ', 'fade')
             if roh_typ == 'random':
-                self.foto_uebergang_typ = random.choice(['fade', 'slide', 'kenburns', 'rotate'])
+                self.foto_uebergang_typ = random.choice(UEBERGANG_TYPEN_KONKRET)
             else:
                 self.foto_uebergang_typ = roh_typ
             self.uebergang_dauer = int(einstellung_holen(self.conn, 'uebergang_dauer_ms', '800'))
@@ -279,38 +302,47 @@ class App:
             self.screen.blit(gedreht, self._rect_zentriert(gedreht))
             return
 
-        # 'fade' und 'kenburns' starten beide mit einer Ueberblendung
+        if typ == 'wipe':
+            if alt:
+                self.screen.blit(alt, self._rect_zentriert(alt))
+            breite_sichtbar = max(1, int(self.w * fortschritt))
+            self.screen.set_clip(pygame.Rect(0, 0, breite_sichtbar, self.h))
+            self.screen.blit(neu, self._rect_zentriert(neu))
+            self.screen.set_clip(None)
+            return
+
+        # 'fade' startet mit einer Ueberblendung
         if alt:
             self.screen.blit(alt, self._rect_zentriert(alt))
         neu_kopie = neu.copy()
         neu_kopie.set_alpha(int(255 * fortschritt))
         self.screen.blit(neu_kopie, self._rect_zentriert(neu_kopie))
 
-    def _bild_zeichnen(self, surface, typ, anzeige_ms):
-        if typ == 'kenburns':
-            dauer = int(einstellung_holen(self.conn, 'anzeige_dauer_sek', '8')) * 1000
-            fortschritt = min(1.0, anzeige_ms / max(1, dauer))
-            skala = 1.0 + 0.15 * fortschritt
-            gezoomt = pygame.transform.smoothscale(
-                surface, (max(1, int(surface.get_width() * skala)), max(1, int(surface.get_height() * skala)))
-            )
-            self.screen.blit(gezoomt, self._rect_zentriert(gezoomt))
-        else:
-            self.screen.blit(surface, self._rect_zentriert(surface))
-
+    def _bild_zeichnen(self, surface, anzeige_ms):
+        self.screen.blit(surface, self._rect_zentriert(surface))
         self._datum_overlay_zeichnen(anzeige_ms)
 
     def _datum_overlay_zeichnen(self, anzeige_ms):
         if not self.aktuelles_datum:
             return
-        if anzeige_ms < DATUM_EINBLEND_START_MS:
+        if einstellung_holen(self.conn, 'datum_anzeigen', '1') != '1':
             return
-        fortschritt = min(1.0, (anzeige_ms - DATUM_EINBLEND_START_MS) / DATUM_EINBLEND_DAUER_MS)
-        alpha = int(255 * fortschritt)
+
+        ausblend_ende = DATUM_AUSBLEND_START_MS + DATUM_AUSBLEND_DAUER_MS
+        if anzeige_ms < DATUM_EINBLEND_DAUER_MS:
+            fortschritt = anzeige_ms / DATUM_EINBLEND_DAUER_MS
+        elif anzeige_ms < DATUM_AUSBLEND_START_MS:
+            fortschritt = 1.0
+        elif anzeige_ms < ausblend_ende:
+            fortschritt = 1.0 - (anzeige_ms - DATUM_AUSBLEND_START_MS) / DATUM_AUSBLEND_DAUER_MS
+        else:
+            return
+
         text_anzeige = datum_de_formatieren(self.aktuelles_datum)
         if not text_anzeige:
             return
 
+        alpha = int(255 * fortschritt)
         balken_hoehe = 50
         balken = pygame.Surface((self.w, balken_hoehe), pygame.SRCALPHA)
         balken.fill((0, 0, 0, int(140 * fortschritt)))
@@ -347,7 +379,7 @@ class App:
                 self.in_uebergang = False
                 self.anzeige_start = jetzt
         else:
-            self._bild_zeichnen(self.aktuelle_surface, typ, jetzt - self.anzeige_start)
+            self._bild_zeichnen(self.aktuelle_surface, jetzt - self.anzeige_start)
             dauer = int(einstellung_holen(self.conn, 'anzeige_dauer_sek', '8')) * 1000
             if jetzt - self.anzeige_start > dauer:
                 self.naechstes_foto_starten()
@@ -404,6 +436,7 @@ class App:
         y += 28
 
         zeilen.append(('video_toggle', None, y)); y += row_h + gap
+        zeilen.append(('datum_toggle', None, y)); y += row_h + gap
         zeilen.append(('dauer_stepper', None, y)); y += row_h + gap
         zeilen.append(('uebergang_typ', None, y)); y += row_h + gap
         zeilen.append(('uebergang_dauer', None, y)); y += row_h + gap
@@ -500,6 +533,9 @@ class App:
             elif art == 'video_toggle':
                 an = einstellung_holen(self.conn, 'videos_aktiv', '1') == '1'
                 self._zeile_toggle(rect, self.t('videos_label'), an)
+            elif art == 'datum_toggle':
+                an = einstellung_holen(self.conn, 'datum_anzeigen', '1') == '1'
+                self._zeile_toggle(rect, self.t('datum_anzeigen_label'), an)
             elif art == 'dauer_stepper':
                 wert = einstellung_holen(self.conn, 'anzeige_dauer_sek', '8')
                 self._zeile_stepper(rect, f"{self.t('anzeige_dauer_label')}: {wert}s")
@@ -543,6 +579,9 @@ class App:
             elif art == 'video_toggle':
                 aktuell = einstellung_holen(self.conn, 'videos_aktiv', '1')
                 einstellung_setzen(self.conn, 'videos_aktiv', '0' if aktuell == '1' else '1')
+            elif art == 'datum_toggle':
+                aktuell = einstellung_holen(self.conn, 'datum_anzeigen', '1')
+                einstellung_setzen(self.conn, 'datum_anzeigen', '0' if aktuell == '1' else '1')
             elif art == 'dauer_stepper':
                 self._stepper_tap(x, rect, 'anzeige_dauer_sek', 2, 120, 1)
             elif art == 'uebergang_typ':
@@ -712,28 +751,47 @@ class App:
     # ── Hauptschleife ────────────────────────────────────────────────
 
     def run(self):
+        fehler_zaehler = 0
+        fehler_fenster_start = pygame.time.get_ticks()
+
         while self.running:
-            for ev in pygame.event.get():
-                if ev.type == pygame.QUIT:
-                    self.running = False
-                elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE and not IST_LINUX:
-                    self.running = False
-                elif self.state == 'SLIDESHOW':
-                    self.slideshow_event(ev)
+            try:
+                for ev in pygame.event.get():
+                    if ev.type == pygame.QUIT:
+                        self.running = False
+                    elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE and not IST_LINUX:
+                        self.running = False
+                    elif self.state == 'SLIDESHOW':
+                        self.slideshow_event(ev)
+                    elif self.state == 'SETTINGS':
+                        self.settings_event(ev)
+                    elif self.state == 'FOTOS_VERWALTEN':
+                        self.fotos_verwalten_event(ev)
+
+                if self.state == 'SLIDESHOW':
+                    self.slideshow_update_und_zeichnen()
+                    self.zahnrad_zeichnen()
                 elif self.state == 'SETTINGS':
-                    self.settings_event(ev)
+                    self.settings_zeichnen()
                 elif self.state == 'FOTOS_VERWALTEN':
-                    self.fotos_verwalten_event(ev)
+                    self.fotos_verwalten_zeichnen()
 
-            if self.state == 'SLIDESHOW':
-                self.slideshow_update_und_zeichnen()
-                self.zahnrad_zeichnen()
-            elif self.state == 'SETTINGS':
-                self.settings_zeichnen()
-            elif self.state == 'FOTOS_VERWALTEN':
-                self.fotos_verwalten_zeichnen()
+                pygame.display.flip()
+            except Exception:
+                # Ein einzelner Fehler (z.B. defektes Foto) soll die Diashow nicht
+                # komplett beenden - loggen, kurz warten, weitermachen. Haeufen sich
+                # die Fehler aber (z.B. echter Programmfehler), lieber sauber
+                # beenden - das Kiosk-Startskript startet dann automatisch neu.
+                fehler_loggen('Fehler in der Hauptschleife')
+                jetzt = pygame.time.get_ticks()
+                if jetzt - fehler_fenster_start > 5000:
+                    fehler_zaehler = 0
+                    fehler_fenster_start = jetzt
+                fehler_zaehler += 1
+                if fehler_zaehler > 20:
+                    fehler_loggen('Zu viele Fehler in kurzer Zeit - beende kiosk.py')
+                    self.running = False
 
-            pygame.display.flip()
             self.clock.tick(FPS)
 
         self.conn.close()
@@ -741,4 +799,8 @@ class App:
 
 
 if __name__ == '__main__':
-    App().run()
+    try:
+        App().run()
+    except Exception:
+        fehler_loggen('Fehler beim Start (App-Konstruktion)')
+        raise

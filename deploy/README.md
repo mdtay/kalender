@@ -98,13 +98,23 @@ fi
 EOF
 cat > ~/.xinitrc << 'EOF'
 #!/bin/bash
-/home/tay/kalender/venv/bin/python /home/tay/kalender/rahmen/kiosk.py > /home/tay/kiosk.log 2>&1
+xset s off; xset -dpms; xset s noblank
+while true; do
+  /home/tay/kalender/venv/bin/python /home/tay/kalender/rahmen/kiosk.py >> /home/tay/kiosk.log 2>&1
+  echo "$(date '+%Y-%m-%d %H:%M:%S'): kiosk.py beendet (Exit $?) - Neustart in 3s" >> /home/tay/kiosk.log
+  sleep 3
+done
 EOF
 chmod +x ~/.xinitrc
 ```
 Kein `curl`-Warteskript mehr nötig (das gab es nur, weil vorher auf den
 Flask-Webserver gewartet werden musste) — `kiosk.py` öffnet direkt sein
-eigenes Vollbildfenster. Stdout/stderr geht nach `~/kiosk.log`, dort zuerst
+eigenes Vollbildfenster. Die `while true`-Schleife startet `kiosk.py`
+automatisch neu, falls es doch mal komplett abstürzt (z.B. SDL-Fehler) —
+sonst bliebe der Bildschirm dauerhaft auf "Kein Signal" hängen, bis jemand
+manuell neu startet. Stdout/stderr sammelt sich in `~/kiosk.log` (wächst mit
+der Zeit, ggf. gelegentlich leeren); zusätzlich loggt `kiosk.py` selbst
+Fehler mit Zeitstempel nach `rahmen/kiosk_fehler.log` — dort zuerst
 nachschauen, falls der Bildschirm schwarz bleibt oder "Kein Signal" zeigt.
 
 Kiosk neu starten (kein volles Reboot nötig):
