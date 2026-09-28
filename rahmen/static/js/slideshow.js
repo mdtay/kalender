@@ -21,6 +21,10 @@
     function naechstesBildZeigen() {
         if (fotos.length === 0) {
             leerHinweis.hidden = false;
+            // Regelmaessig neu versuchen, statt fuer immer leer zu bleiben
+            // (z.B. wenn noch nie synchronisiert wurde oder das Laden kurz fehlschlug).
+            fotosLaden();
+            planeNaechstes(15 * 1000);
             return;
         }
         leerHinweis.hidden = true;
@@ -85,14 +89,21 @@
     async function fotosLaden() {
         try {
             const res = await fetch('/api/fotos');
-            fotos = await res.json();
+            const geladen = await res.json();
+            if (!Array.isArray(geladen) || geladen.length === 0) {
+                // Leere/kaputte Antwort - alte Liste (falls vorhanden) lieber behalten
+                // als eine funktionierende Diashow grundlos zu leeren.
+                return;
+            }
+            fotos = geladen;
             // Fisher-Yates fuer eine zufaellige Reihenfolge, die sich nicht bei jedem Refresh wiederholt
             for (let i = fotos.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [fotos[i], fotos[j]] = [fotos[j], fotos[i]];
             }
         } catch (e) {
-            fotos = [];
+            // Netzwerk-/Serverfehler: alte Liste einfach behalten, naechstesBildZeigen()
+            // versucht es von selbst erneut, solange fotos leer ist.
         }
     }
 
