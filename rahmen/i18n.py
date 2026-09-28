@@ -28,6 +28,9 @@ TRANSLATIONS = {
         'keine_fotos': 'Noch keine Fotos vorhanden.',
         'zu_einstellungen': 'Einstellungen',
         'zur_diashow': 'Zur Diashow',
+        'alle_jahre': 'Alle Jahre',
+        'alle_monate': 'Alle Monate',
+        'seite': 'Seite',
     },
     'tr': {
         'einstellungen_titel': 'Ayarlar',
@@ -56,6 +59,9 @@ TRANSLATIONS = {
         'keine_fotos': 'Henüz fotoğraf yok.',
         'zu_einstellungen': 'Ayarlar',
         'zur_diashow': 'Slayt gösterisine dön',
+        'alle_jahre': 'Tüm yıllar',
+        'alle_monate': 'Tüm aylar',
+        'seite': 'Sayfa',
     },
 }
 

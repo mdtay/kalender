@@ -129,6 +129,13 @@ def einstellung_setzen(conn, schluessel, wert):
     conn.commit()
 
 
+MONATSNAMEN = {
+    'de': ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+           'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'],
+    'tr': ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+           'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'],
+}
+
 UEBERGANG_TYPEN_KONKRET = ['fade', 'slide', 'wipe', 'rotate']
 UEBERGANG_TYPEN = UEBERGANG_TYPEN_KONKRET + ['random']
 DATUM_EINBLEND_DAUER_MS = 350
@@ -207,10 +214,16 @@ class App:
         self.fotos_seite = 0
         self._fotos_verwalten_liste = []
         self._fotos_verwalten_hat_weiter = False
+        self._fotos_verwalten_gesamt = 0
+        self.fv_filter_jahr = None
+        self.fv_filter_monat = None
+        self._fv_jahre_liste = []
         self._fv_rects = []
         self._fv_zurueck_rect = None
         self._fv_weiter_rect = None
         self._fv_einst_rect = None
+        self._fv_jahr_rect = None
+        self._fv_monat_rect = None
 
     def t(self, schluessel):
         return t(schluessel, self.sprache)
@@ -598,6 +611,9 @@ class App:
             elif art == 'button_fotos':
                 self.state = 'FOTOS_VERWALTEN'
                 self.fotos_seite = 0
+                self.fv_filter_jahr = None
+                self.fv_filter_monat = None
+                self._fv_jahre_liste = self._fv_verfuegbare_jahre()
                 self.fotos_verwalten_laden_seite()
             elif art == 'button_diashow':
                 self.state = 'SLIDESHOW'
@@ -628,15 +644,48 @@ class App:
     FV_REIHEN = 2
     FV_RAND = 20
 
+    def _fv_verfuegbare_jahre(self):
+        rows = self.conn.execute(
+            "SELECT DISTINCT substr(datum,1,4) as jahr FROM fotos ORDER BY jahr DESC"
+        ).fetchall()
+        return [r['jahr'] for r in rows]
+
+    def _fv_where_klausel(self):
+        bedingungen, parameter = [], []
+        if self.fv_filter_jahr:
+            bedingungen.append("substr(datum,1,4)=?")
+            parameter.append(self.fv_filter_jahr)
+        if self.fv_filter_monat:
+            bedingungen.append("substr(datum,6,2)=?")
+            parameter.append(f"{self.fv_filter_monat:02d}")
+        where = ("WHERE " + " AND ".join(bedingungen)) if bedingungen else ""
+        return where, parameter
+
     def fotos_verwalten_laden_seite(self):
         pro_seite = self.FV_SPALTEN * self.FV_REIHEN
-        gesamt = self.conn.execute("SELECT COUNT(*) as c FROM fotos").fetchone()['c']
+        where, parameter = self._fv_where_klausel()
+        gesamt = self.conn.execute(f"SELECT COUNT(*) as c FROM fotos {where}", parameter).fetchone()['c']
         zeilen = self.conn.execute(
-            "SELECT * FROM fotos ORDER BY datum DESC LIMIT ? OFFSET ?",
-            (pro_seite, self.fotos_seite * pro_seite)
+            f"SELECT * FROM fotos {where} ORDER BY datum DESC LIMIT ? OFFSET ?",
+            parameter + [pro_seite, self.fotos_seite * pro_seite]
         ).fetchall()
         self._fotos_verwalten_liste = [dict(r) for r in zeilen]
+        self._fotos_verwalten_gesamt = gesamt
         self._fotos_verwalten_hat_weiter = (self.fotos_seite + 1) * pro_seite < gesamt
+
+    def _fv_jahr_zyklus(self, richtung):
+        optionen = [None] + self._fv_jahre_liste
+        idx = optionen.index(self.fv_filter_jahr) if self.fv_filter_jahr in optionen else 0
+        self.fv_filter_jahr = optionen[(idx + richtung) % len(optionen)]
+        self.fotos_seite = 0
+        self.fotos_verwalten_laden_seite()
+
+    def _fv_monat_zyklus(self, richtung):
+        optionen = [None] + list(range(1, 13))
+        idx = optionen.index(self.fv_filter_monat) if self.fv_filter_monat in optionen else 0
+        self.fv_filter_monat = optionen[(idx + richtung) % len(optionen)]
+        self.fotos_seite = 0
+        self.fotos_verwalten_laden_seite()
 
     def thumbnail_laden(self, dateiname):
         os.makedirs(THUMBS_DIR, exist_ok=True)
@@ -654,29 +703,56 @@ class App:
         except Exception:
             return None
 
+    FV_KOPF_HOEHE = 132
+    FV_FUSS_HOEHE = 86
+    FV_BESCHRIFTUNG_H = 22
+
     def _fv_zellen_geometrie(self):
         spalten, reihen, rand = self.FV_SPALTEN, self.FV_REIHEN, self.FV_RAND
-        kopf_hoehe = 70
-        fuss_hoehe = 86
+        beschriftung_h = self.FV_BESCHRIFTUNG_H
         verfuegbare_breite = self.w - rand * (spalten + 1)
-        verfuegbare_hoehe = self.h - kopf_hoehe - fuss_hoehe - rand * (reihen - 1)
+        verfuegbare_hoehe = (self.h - self.FV_KOPF_HOEHE - self.FV_FUSS_HOEHE
+                              - rand * (reihen - 1) - reihen * beschriftung_h)
         zelle = min(verfuegbare_breite // spalten, verfuegbare_hoehe // reihen)
         raster_breite = spalten * zelle + (spalten - 1) * rand
         start_x = (self.w - raster_breite) // 2
-        return zelle, rand, start_x, kopf_hoehe
+        return zelle, rand, start_x
+
+    def _fv_cycler_zeichnen(self, rect, text):
+        self._karte(rect)
+        for cx, zeichen in ((rect.x + 30, '‹'), (rect.right - 30, '›')):
+            t_surf = self.font_mittel.render(zeichen, True, FARBE_AKZENT_DUNKEL)
+            self.screen.blit(t_surf, t_surf.get_rect(center=(cx, rect.centery)))
+        t_surf = self.font_klein.render(text, True, FARBE_TEXT_DUNKEL)
+        self.screen.blit(t_surf, t_surf.get_rect(center=rect.center))
 
     def fotos_verwalten_zeichnen(self):
         self.screen.fill(FARBE_SEITE)
         titel = self.font_gross.render(self.t('fotos_verwalten_titel'), True, FARBE_TEXT_DUNKEL)
         self.screen.blit(titel, (28, 20))
 
-        zelle, rand, start_x, kopf_hoehe = self._fv_zellen_geometrie()
+        # Filterleiste: Jahr + Monat
+        filter_y = 70
+        breite_halb = (self.w - 56) // 2
+        self._fv_jahr_rect = pygame.Rect(28, filter_y, breite_halb, 48)
+        self._fv_monat_rect = pygame.Rect(28 + breite_halb + 8, filter_y, breite_halb, 48)
+        jahr_text = self.fv_filter_jahr or self.t('alle_jahre')
+        monat_text = MONATSNAMEN.get(self.sprache, MONATSNAMEN['de'])[self.fv_filter_monat - 1] \
+            if self.fv_filter_monat else self.t('alle_monate')
+        self._fv_cycler_zeichnen(self._fv_jahr_rect, jahr_text)
+        self._fv_cycler_zeichnen(self._fv_monat_rect, monat_text)
+
+        zelle, rand, start_x = self._fv_zellen_geometrie()
         self._fv_rects = []
+
+        if not self._fotos_verwalten_liste:
+            hinweis = self.font_klein.render(self.t('keine_fotos'), True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+            self.screen.blit(hinweis, (28, self.FV_KOPF_HOEHE + 20))
 
         for i, foto in enumerate(self._fotos_verwalten_liste):
             col, row = i % self.FV_SPALTEN, i // self.FV_SPALTEN
             x = start_x + col * (zelle + rand)
-            y = kopf_hoehe + row * (zelle + rand)
+            y = self.FV_KOPF_HOEHE + row * (zelle + self.FV_BESCHRIFTUNG_H + rand)
             rect = pygame.Rect(x, y, zelle, zelle)
             self._fv_rects.append((rect, foto))
 
@@ -707,6 +783,17 @@ class App:
             pygame.draw.circle(self.screen, stern_farbe, stern_center, 18, width=0 if foto['favorit'] else 2)
             self._stern_zeichnen(stern_center, 10, (255, 255, 255) if foto['favorit'] else (200, 200, 205))
 
+            datum_text = datum_de_formatieren(foto.get('datum'))
+            if datum_text:
+                t_surf = self.font_klein.render(datum_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+                self.screen.blit(t_surf, t_surf.get_rect(midtop=(rect.centerx, rect.bottom + 2)))
+
+        pro_seite = self.FV_SPALTEN * self.FV_REIHEN
+        gesamt_seiten = max(1, math.ceil(self._fotos_verwalten_gesamt / pro_seite))
+        seiten_text = f"{self.t('seite')} {self.fotos_seite + 1}/{gesamt_seiten}"
+        seiten_surf = self.font_klein.render(seiten_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+        self.screen.blit(seiten_surf, seiten_surf.get_rect(centerx=self.w // 2, y=self.h - 108))
+
         unten_y = self.h - 70
         self._fv_zurueck_rect = pygame.Rect(20, unten_y, 150, 54)
         self._fv_weiter_rect = pygame.Rect(self.w - 170, unten_y, 150, 54)
@@ -729,6 +816,14 @@ class App:
         if ev.type != pygame.MOUSEBUTTONDOWN:
             return
         pos = ev.pos
+        if self._fv_jahr_rect and self._fv_jahr_rect.collidepoint(pos):
+            richtung = -1 if pos[0] < self._fv_jahr_rect.centerx else 1
+            self._fv_jahr_zyklus(richtung)
+            return
+        if self._fv_monat_rect and self._fv_monat_rect.collidepoint(pos):
+            richtung = -1 if pos[0] < self._fv_monat_rect.centerx else 1
+            self._fv_monat_zyklus(richtung)
+            return
         for rect, foto in self._fv_rects:
             stern_rect = pygame.Rect(rect.right - 42, rect.top + 6, 36, 36)
             if stern_rect.collidepoint(pos):
