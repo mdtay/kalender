@@ -31,6 +31,7 @@ TRANSLATIONS = {
         'alle_jahre': 'Alle Jahre',
         'alle_monate': 'Alle Monate',
         'seite': 'Seite',
+        'bildschirm_aus_button': 'Bildschirm ausschalten',
     },
     'tr': {
         'einstellungen_titel': 'Ayarlar',
@@ -62,6 +63,7 @@ TRANSLATIONS = {
         'alle_jahre': 'Tüm yıllar',
         'alle_monate': 'Tüm aylar',
         'seite': 'Sayfa',
+        'bildschirm_aus_button': 'Ekranı kapat',
     },
 }
 

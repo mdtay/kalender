@@ -261,6 +261,29 @@ class App:
         except FileNotFoundError:
             pass  # mpv fehlt (z.B. lokaler Windows-Testlauf) - Video einfach ueberspringen
 
+    def bildschirm_ausschalten(self):
+        if IST_LINUX:
+            try:
+                subprocess.run(['vcgencmd', 'display_power', '0'], check=False)
+            except FileNotFoundError:
+                pass
+        self.state = 'BILDSCHIRM_AUS'
+
+    def bildschirm_einschalten(self):
+        if IST_LINUX:
+            try:
+                subprocess.run(['vcgencmd', 'display_power', '1'], check=False)
+            except FileNotFoundError:
+                pass
+        self.state = 'SLIDESHOW'
+
+    def bildschirm_aus_event(self, ev):
+        if ev.type == pygame.MOUSEBUTTONDOWN:
+            self.bildschirm_einschalten()
+
+    def bildschirm_aus_zeichnen(self):
+        self.screen.fill(FARBE_HINTERGRUND)
+
     def naechstes_foto_starten(self):
         if not self.fotos:
             self.aktuelle_surface = None
@@ -477,6 +500,7 @@ class App:
         zeilen.append(('status', None, y)); y += 58
         zeilen.append(('button_fotos', None, y)); y += row_h + gap
         zeilen.append(('button_diashow', None, y)); y += row_h + gap
+        zeilen.append(('button_bildschirm_aus', None, y)); y += row_h + gap
 
         self._settings_inhalt_hoehe = y + 24
         return zeilen
@@ -586,6 +610,8 @@ class App:
                 self._zeile_button(rect, self.t('fotos_verwalten_titel'), akzent=True)
             elif art == 'button_diashow':
                 self._zeile_button(rect, self.t('zur_diashow'), akzent=True)
+            elif art == 'button_bildschirm_aus':
+                self._zeile_button(rect, self.t('bildschirm_aus_button'))
 
     def _stepper_tap(self, x, rect, schluessel, minimum, maximum, schritt):
         aktuell = int(einstellung_holen(self.conn, schluessel, str(minimum)))
@@ -637,6 +663,9 @@ class App:
             elif art == 'button_diashow':
                 self.state = 'SLIDESHOW'
                 self.fotos = fotos_laden(self.conn)
+            elif art == 'button_bildschirm_aus':
+                self.bildschirm_ausschalten()
+                return
             self._settings_zeilen = self.settings_zeilen_aufbauen()
             return
 
@@ -881,6 +910,8 @@ class App:
                         self.settings_event(ev)
                     elif self.state == 'FOTOS_VERWALTEN':
                         self.fotos_verwalten_event(ev)
+                    elif self.state == 'BILDSCHIRM_AUS':
+                        self.bildschirm_aus_event(ev)
 
                 if self.state == 'SLIDESHOW':
                     self.slideshow_update_und_zeichnen()
@@ -889,6 +920,8 @@ class App:
                     self.settings_zeichnen()
                 elif self.state == 'FOTOS_VERWALTEN':
                     self.fotos_verwalten_zeichnen()
+                elif self.state == 'BILDSCHIRM_AUS':
+                    self.bildschirm_aus_zeichnen()
 
                 pygame.display.flip()
             except Exception:
