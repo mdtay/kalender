@@ -265,20 +265,18 @@ class App:
 
     def bildschirm_ausschalten(self):
         if IST_LINUX:
-            for cmd in (['vcgencmd', 'display_power', '0'], ['xset', 'dpms', 'force', 'off']):
-                try:
-                    subprocess.run(cmd, check=False)
-                except FileNotFoundError:
-                    pass
+            try:
+                subprocess.run(['vcgencmd', 'display_power', '0'], check=False)
+            except FileNotFoundError:
+                pass
         self.state = 'BILDSCHIRM_AUS'
 
     def bildschirm_einschalten(self):
         if IST_LINUX:
-            for cmd in (['vcgencmd', 'display_power', '1'], ['xset', 'dpms', 'force', 'on']):
-                try:
-                    subprocess.run(cmd, check=False)
-                except FileNotFoundError:
-                    pass
+            try:
+                subprocess.run(['vcgencmd', 'display_power', '1'], check=False)
+            except FileNotFoundError:
+                pass
         self.state = 'SLIDESHOW'
 
     def bildschirm_aus_event(self, ev):
