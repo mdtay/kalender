@@ -207,6 +207,8 @@ class App:
 
         # Einstellungen-Zustand
         self._settings_zeilen = []
+        self._settings_personen_chips = []
+        self._settings_top_rects = None
         self._settings_inhalt_hoehe = self.h
         self.settings_scroll = 0
         self.settings_drag_start = None
@@ -475,17 +477,18 @@ class App:
 
     def settings_zeilen_aufbauen(self):
         zeilen = []
-        y = 28
+        y = 24
         row_h = 60
         gap = 12
 
+        zeilen.append(('top_buttons', None, y))
+        y += 54 + 24
+
         zeilen.append(('titel', self.t('personen_titel'), y))
-        y += 48
-        personen = self.conn.execute("SELECT * FROM personen_cache ORDER BY name").fetchall()
-        for p in personen:
-            zeilen.append(('person', dict(p), y))
-            y += row_h + gap
-        if not personen:
+        y += 44
+        chips, y = self._settings_personen_chips_aufbauen(y)
+        self._settings_personen_chips = chips
+        if not chips:
             zeilen.append(('hinweis', self.t('personen_hinweis'), y))
             y += 36
         y += 28
@@ -493,28 +496,39 @@ class App:
         zeilen.append(('video_toggle', None, y)); y += row_h + gap
         zeilen.append(('datum_toggle', None, y)); y += row_h + gap
         zeilen.append(('dauer_stepper', None, y)); y += row_h + gap
-        zeilen.append(('uebergang_typ', None, y)); y += row_h + gap
         zeilen.append(('uebergang_dauer', None, y)); y += row_h + gap
+        zeilen.append(('uebergang_typ', None, y)); y += row_h + gap
         zeilen.append(('sprache', None, y)); y += row_h + gap
         y += 20
         zeilen.append(('status', None, y)); y += 58
-        zeilen.append(('button_fotos', None, y)); y += row_h + gap
-        zeilen.append(('button_diashow', None, y)); y += row_h + gap
-        zeilen.append(('button_bildschirm_aus', None, y)); y += row_h + gap
 
         self._settings_inhalt_hoehe = y + 24
         return zeilen
+
+    def _settings_personen_chips_aufbauen(self, start_y):
+        personen = self.conn.execute("SELECT * FROM personen_cache ORDER BY name").fetchall()
+        chips = []
+        x = 28
+        y = start_y
+        chip_h = 46
+        gap = 10
+        max_x = self.w - 28
+        for p in personen:
+            text_breite = self.font_mittel.size(p['name'])[0]
+            chip_breite = text_breite + 44
+            if x + chip_breite > max_x and x > 28:
+                x = 28
+                y += chip_h + gap
+            chips.append((pygame.Rect(x, y, chip_breite, chip_h), dict(p)))
+            x += chip_breite + gap
+        ende_y = (y + chip_h) if personen else start_y
+        return chips, ende_y
 
     def _karte(self, rect, aktiv=False):
         hintergrund = FARBE_KARTE_AKTIV if aktiv else FARBE_KARTE
         rand = FARBE_KARTE_AKTIV_RAND if aktiv else FARBE_KARTE_RAND
         pygame.draw.rect(self.screen, hintergrund, rect, border_radius=16)
         pygame.draw.rect(self.screen, rand, rect, width=2, border_radius=16)
-
-    def _haken_zeichnen(self, center, farbe):
-        x, y = center
-        pygame.draw.lines(self.screen, farbe, False,
-                           [(x - 7, y), (x - 2, y + 6), (x + 8, y - 7)], width=3)
 
     def _zeile_toggle(self, rect, label, an):
         self._karte(rect, aktiv=an)
@@ -560,8 +574,37 @@ class App:
         self.screen.blit(self.font_klein.render(speicher_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT), (rect.x, rect.y))
         self.screen.blit(self.font_klein.render(sync_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT), (rect.x, rect.y + 26))
 
+    def _settings_personen_chip_zeichnen(self, rect, name, aktiv):
+        if aktiv:
+            pygame.draw.rect(self.screen, FARBE_AKZENT, rect, border_radius=rect.height // 2)
+            textfarbe = (255, 255, 255)
+        else:
+            pygame.draw.rect(self.screen, FARBE_KARTE, rect, border_radius=rect.height // 2)
+            pygame.draw.rect(self.screen, FARBE_KARTE_RAND, rect, width=2, border_radius=rect.height // 2)
+            textfarbe = FARBE_TEXT_DUNKEL
+        text = self.font_mittel.render(name, True, textfarbe)
+        self.screen.blit(text, text.get_rect(center=rect.center))
+
+    def _settings_top_buttons_zeichnen(self, rect):
+        gap = 10
+        drittel = (rect.width - 2 * gap) // 3
+        r1 = pygame.Rect(rect.x, rect.y, drittel, rect.height)
+        r2 = pygame.Rect(r1.right + gap, rect.y, drittel, rect.height)
+        r3 = pygame.Rect(r2.right + gap, rect.y, rect.right - (r2.right + gap), rect.height)
+        self._zeile_button(r1, self.t('fotos_verwalten_titel'), akzent=True)
+        self._zeile_button(r2, self.t('zur_diashow'), akzent=True)
+        self._zeile_button(r3, self.t('bildschirm_aus_button'))
+        self._settings_top_rects = (r1, r2, r3)
+
     def settings_zeichnen(self):
         self.screen.fill(FARBE_SEITE)
+
+        for rect, person in self._settings_personen_chips:
+            angepasst = rect.move(0, -self.settings_scroll)
+            if angepasst.bottom < -10 or angepasst.top > self.h + 10:
+                continue
+            self._settings_personen_chip_zeichnen(angepasst, person['name'], person['erlaubt'])
+
         for art, daten, row_y in self._settings_zeilen:
             y = row_y - self.settings_scroll
             if y < -60 or y > self.h + 10:
@@ -576,16 +619,8 @@ class App:
                 continue
 
             rect = pygame.Rect(28, y, self.w - 56, 60)
-            if art == 'person':
-                self._karte(rect, aktiv=daten['erlaubt'])
-                text = self.font_mittel.render(daten['name'], True, FARBE_TEXT_DUNKEL)
-                self.screen.blit(text, (rect.x + 20, rect.y + (rect.height - text.get_height()) // 2))
-                haken_mitte = (rect.right - 34, rect.centery)
-                pygame.draw.circle(self.screen, (255, 255, 255) if daten['erlaubt'] else FARBE_SEITE, haken_mitte, 16)
-                pygame.draw.circle(self.screen, FARBE_AKZENT if daten['erlaubt'] else FARBE_KARTE_RAND,
-                                    haken_mitte, 16, width=2)
-                if daten['erlaubt']:
-                    self._haken_zeichnen(haken_mitte, FARBE_AKZENT_DUNKEL)
+            if art == 'top_buttons':
+                self._settings_top_buttons_zeichnen(pygame.Rect(28, y, self.w - 56, 54))
             elif art == 'video_toggle':
                 an = einstellung_holen(self.conn, 'videos_aktiv', '1') == '1'
                 self._zeile_toggle(rect, self.t('videos_label'), an)
@@ -606,12 +641,6 @@ class App:
                 self._zeile_button(rect, f"{self.t('sprache_label')}: {'Deutsch' if spr == 'de' else 'Türkçe'}")
             elif art == 'status':
                 self._status_zeichnen(rect)
-            elif art == 'button_fotos':
-                self._zeile_button(rect, self.t('fotos_verwalten_titel'), akzent=True)
-            elif art == 'button_diashow':
-                self._zeile_button(rect, self.t('zur_diashow'), akzent=True)
-            elif art == 'button_bildschirm_aus':
-                self._zeile_button(rect, self.t('bildschirm_aus_button'))
 
     def _stepper_tap(self, x, rect, schluessel, minimum, maximum, schritt):
         aktuell = int(einstellung_holen(self.conn, schluessel, str(minimum)))
@@ -626,14 +655,38 @@ class App:
     def _settings_tap(self, pos):
         x, y = pos
         y_inhalt = y + self.settings_scroll
+
+        for rect, person in self._settings_personen_chips:
+            if rect.collidepoint(x, y_inhalt):
+                neu = 0 if person['erlaubt'] else 1
+                self.conn.execute("UPDATE personen_cache SET erlaubt=? WHERE id=?", (neu, person['id']))
+                self.conn.commit()
+                self._settings_zeilen = self.settings_zeilen_aufbauen()
+                return
+
         for art, daten, row_y in self._settings_zeilen:
             rect = pygame.Rect(28, row_y, self.w - 56, 60)
             if not rect.collidepoint(x, y_inhalt):
                 continue
-            if art == 'person':
-                neu = 0 if daten['erlaubt'] else 1
-                self.conn.execute("UPDATE personen_cache SET erlaubt=? WHERE id=?", (neu, daten['id']))
-                self.conn.commit()
+            if art == 'top_buttons':
+                if self._settings_top_rects:
+                    r1, r2, r3 = self._settings_top_rects
+                    if r1.collidepoint(x, y_inhalt):
+                        self.state = 'FOTOS_VERWALTEN'
+                        self.fotos_seite = 0
+                        self.fv_filter_jahr = None
+                        self.fv_filter_monat = None
+                        self._fv_jahre_liste = self._fv_verfuegbare_jahre()
+                        self.fotos_verwalten_laden_seite()
+                        return
+                    if r2.collidepoint(x, y_inhalt):
+                        self.state = 'SLIDESHOW'
+                        self.fotos = fotos_laden(self.conn)
+                        return
+                    if r3.collidepoint(x, y_inhalt):
+                        self.bildschirm_ausschalten()
+                        return
+                return
             elif art == 'video_toggle':
                 aktuell = einstellung_holen(self.conn, 'videos_aktiv', '1')
                 einstellung_setzen(self.conn, 'videos_aktiv', '0' if aktuell == '1' else '1')
@@ -653,19 +706,6 @@ class App:
                 neu = 'tr' if aktuell == 'de' else 'de'
                 einstellung_setzen(self.conn, 'sprache', neu)
                 self.sprache = neu
-            elif art == 'button_fotos':
-                self.state = 'FOTOS_VERWALTEN'
-                self.fotos_seite = 0
-                self.fv_filter_jahr = None
-                self.fv_filter_monat = None
-                self._fv_jahre_liste = self._fv_verfuegbare_jahre()
-                self.fotos_verwalten_laden_seite()
-            elif art == 'button_diashow':
-                self.state = 'SLIDESHOW'
-                self.fotos = fotos_laden(self.conn)
-            elif art == 'button_bildschirm_aus':
-                self.bildschirm_ausschalten()
-                return
             self._settings_zeilen = self.settings_zeilen_aufbauen()
             return
 
