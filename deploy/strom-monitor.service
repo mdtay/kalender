@@ -1,0 +1,7 @@
+[Unit]
+Description=Temporaeres Strom-/Touch-Diagnoseprotokoll (Rahmen-Pi)
+
+[Service]
+Type=oneshot
+User=tay
+ExecStart=/home/tay/kalender/venv/bin/python /home/tay/kalender/rahmen/strom_monitor.py

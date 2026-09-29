@@ -1,0 +1,10 @@
+[Unit]
+Description=Startet das Strom-/Touch-Diagnoseprotokoll alle 30 Sekunden
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
