@@ -58,13 +58,18 @@ in `deploy/rahmen-app.service` und `deploy/rahmen-sync.service` per
 läuft jetzt als natives `pygame`-Programm direkt über X, kein Webserver
 nötig):
 ```bash
-sudo cp deploy/rahmen-sync.service deploy/rahmen-sync.timer \
-        deploy/rahmen-nacht-aus.service deploy/rahmen-nacht-aus.timer \
-        deploy/rahmen-nacht-an.service deploy/rahmen-nacht-an.timer \
-        /etc/systemd/system/
+sudo cp deploy/rahmen-sync.service deploy/rahmen-sync.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now rahmen-sync.timer
-sudo systemctl enable --now rahmen-nacht-aus.timer rahmen-nacht-an.timer
+```
+**Hinweis Nachtmodus:** `deploy/rahmen-nacht-aus.*`/`rahmen-nacht-an.*` liegen
+noch im Repo, werden aber **nicht mehr gebraucht** — der Nachtmodus ist jetzt
+direkt in den Einstellungen von `kiosk.py` einstellbar (Uhrzeiten per
+Touchscreen, kein SSH mehr nötig). Falls die alten Timer auf einem Gerät
+schon installiert waren, deaktivieren, sonst schalten beide Mechanismen
+gleichzeitig am Bildschirm herum:
+```bash
+sudo systemctl disable --now rahmen-nacht-aus.timer rahmen-nacht-an.timer 2>/dev/null || true
 ```
 
 **5. Ersten Sync manuell anstoßen** (nicht bis 3:30 Uhr warten):

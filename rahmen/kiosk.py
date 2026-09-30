@@ -97,6 +97,9 @@ def init_db():
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_dauer_ms', '800')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('videos_aktiv', '1')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('datum_anzeigen', '1')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_aktiv', '0')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_start_stunde', '22')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_ende_stunde', '7')")
     conn.commit()
     conn.close()
 
@@ -204,6 +207,9 @@ class App:
         self.anzeige_start = 0
         self.letztes_foto_laden = pygame.time.get_ticks()
         self.zahnrad_bis = 0
+        self._bildschirm_auto_aus = False
+        self._letzter_nachtcheck = 0
+        self._sync_prozess = None
 
         # Einstellungen-Zustand
         self._settings_zeilen = []
@@ -278,6 +284,7 @@ class App:
             except FileNotFoundError:
                 pass
         self.state = 'SLIDESHOW'
+        self._bildschirm_auto_aus = False
 
     def bildschirm_aus_event(self, ev):
         if ev.type == pygame.MOUSEBUTTONDOWN:
@@ -285,6 +292,45 @@ class App:
 
     def bildschirm_aus_zeichnen(self):
         self.screen.fill(FARBE_HINTERGRUND)
+
+    @staticmethod
+    def _ist_nachtstunde(stunde_jetzt, start_stunde, ende_stunde):
+        if start_stunde == ende_stunde:
+            return False
+        if start_stunde < ende_stunde:
+            return start_stunde <= stunde_jetzt < ende_stunde
+        return stunde_jetzt >= start_stunde or stunde_jetzt < ende_stunde
+
+    def nachtplan_pruefen(self):
+        jetzt = pygame.time.get_ticks()
+        if jetzt - self._letzter_nachtcheck < 20000:
+            return
+        self._letzter_nachtcheck = jetzt
+
+        if einstellung_holen(self.conn, 'nacht_aktiv', '0') != '1':
+            return
+        start_stunde = int(einstellung_holen(self.conn, 'nacht_start_stunde', '22'))
+        ende_stunde = int(einstellung_holen(self.conn, 'nacht_ende_stunde', '7'))
+        soll_aus = self._ist_nachtstunde(datetime.datetime.now().hour, start_stunde, ende_stunde)
+
+        if soll_aus and self.state != 'BILDSCHIRM_AUS':
+            self.bildschirm_ausschalten()
+            self._bildschirm_auto_aus = True
+        elif not soll_aus and self.state == 'BILDSCHIRM_AUS' and self._bildschirm_auto_aus:
+            self.bildschirm_einschalten()
+
+    def sync_starten(self):
+        if self._sync_prozess and self._sync_prozess.poll() is None:
+            return  # laeuft schon
+        sync_skript = os.path.join(RAHMEN_DIR, 'sync.py')
+        try:
+            self._sync_prozess = subprocess.Popen([sys.executable, sync_skript])
+        except Exception:
+            fehler_loggen('Datenabgleich konnte nicht gestartet werden')
+            self._sync_prozess = None
+
+    def sync_laeuft(self):
+        return bool(self._sync_prozess and self._sync_prozess.poll() is None)
 
     def naechstes_foto_starten(self):
         if not self.fotos:
@@ -500,6 +546,12 @@ class App:
         zeilen.append(('uebergang_typ', None, y)); y += row_h + gap
         zeilen.append(('sprache', None, y)); y += row_h + gap
         y += 20
+        zeilen.append(('nacht_toggle', None, y)); y += row_h + gap
+        if einstellung_holen(self.conn, 'nacht_aktiv', '0') == '1':
+            zeilen.append(('nacht_start_stepper', None, y)); y += row_h + gap
+            zeilen.append(('nacht_ende_stepper', None, y)); y += row_h + gap
+        y += 20
+        zeilen.append(('button_sync', None, y)); y += row_h + gap
         zeilen.append(('status', None, y)); y += 58
 
         self._settings_inhalt_hoehe = y + 24
@@ -639,6 +691,18 @@ class App:
             elif art == 'sprache':
                 spr = einstellung_holen(self.conn, 'sprache', 'de')
                 self._zeile_button(rect, f"{self.t('sprache_label')}: {'Deutsch' if spr == 'de' else 'Türkçe'}")
+            elif art == 'nacht_toggle':
+                an = einstellung_holen(self.conn, 'nacht_aktiv', '0') == '1'
+                self._zeile_toggle(rect, self.t('nacht_aktiv_label'), an)
+            elif art == 'nacht_start_stepper':
+                wert = einstellung_holen(self.conn, 'nacht_start_stunde', '22')
+                self._zeile_stepper(rect, f"{self.t('nacht_start_label')}: {int(wert):02d}:00")
+            elif art == 'nacht_ende_stepper':
+                wert = einstellung_holen(self.conn, 'nacht_ende_stunde', '7')
+                self._zeile_stepper(rect, f"{self.t('nacht_ende_label')}: {int(wert):02d}:00")
+            elif art == 'button_sync':
+                label = self.t('sync_laeuft_label') if self.sync_laeuft() else self.t('sync_button_label')
+                self._zeile_button(rect, label, akzent=not self.sync_laeuft())
             elif art == 'status':
                 self._status_zeichnen(rect)
 
@@ -648,6 +712,17 @@ class App:
             aktuell = max(minimum, aktuell - schritt)
         elif x > rect.right - 70:
             aktuell = min(maximum, aktuell + schritt)
+        else:
+            return
+        einstellung_setzen(self.conn, schluessel, aktuell)
+
+    def _stunden_stepper_tap(self, x, rect, schluessel):
+        """Wie _stepper_tap, aber mit Umlauf 0-23 (fuer Uhrzeiten)."""
+        aktuell = int(einstellung_holen(self.conn, schluessel, '0'))
+        if x < rect.x + 70:
+            aktuell = (aktuell - 1) % 24
+        elif x > rect.right - 70:
+            aktuell = (aktuell + 1) % 24
         else:
             return
         einstellung_setzen(self.conn, schluessel, aktuell)
@@ -685,6 +760,7 @@ class App:
                         return
                     if r3.collidepoint(x, y_inhalt):
                         self.bildschirm_ausschalten()
+                        self._bildschirm_auto_aus = False
                         return
                 return
             elif art == 'video_toggle':
@@ -706,6 +782,15 @@ class App:
                 neu = 'tr' if aktuell == 'de' else 'de'
                 einstellung_setzen(self.conn, 'sprache', neu)
                 self.sprache = neu
+            elif art == 'nacht_toggle':
+                aktuell = einstellung_holen(self.conn, 'nacht_aktiv', '0')
+                einstellung_setzen(self.conn, 'nacht_aktiv', '0' if aktuell == '1' else '1')
+            elif art == 'nacht_start_stepper':
+                self._stunden_stepper_tap(x, rect, 'nacht_start_stunde')
+            elif art == 'nacht_ende_stepper':
+                self._stunden_stepper_tap(x, rect, 'nacht_ende_stunde')
+            elif art == 'button_sync':
+                self.sync_starten()
             self._settings_zeilen = self.settings_zeilen_aufbauen()
             return
 
@@ -939,6 +1024,7 @@ class App:
 
         while self.running:
             try:
+                self.nachtplan_pruefen()
                 for ev in pygame.event.get():
                     if ev.type == pygame.QUIT:
                         self.running = False

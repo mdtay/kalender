@@ -32,6 +32,11 @@ TRANSLATIONS = {
         'alle_monate': 'Alle Monate',
         'seite': 'Seite',
         'bildschirm_aus_button': 'Bildschirm ausschalten',
+        'nacht_aktiv_label': 'Automatisch ein/aus',
+        'nacht_start_label': 'Aus ab',
+        'nacht_ende_label': 'An ab',
+        'sync_button_label': 'Jetzt synchronisieren',
+        'sync_laeuft_label': 'Synchronisiere...',
     },
     'tr': {
         'einstellungen_titel': 'Ayarlar',
@@ -64,6 +69,11 @@ TRANSLATIONS = {
         'alle_monate': 'Tüm aylar',
         'seite': 'Sayfa',
         'bildschirm_aus_button': 'Ekranı kapat',
+        'nacht_aktiv_label': 'Otomatik aç/kapat',
+        'nacht_start_label': 'Şu saatte kapat',
+        'nacht_ende_label': 'Şu saatte aç',
+        'sync_button_label': 'Şimdi senkronize et',
+        'sync_laeuft_label': 'Senkronize ediliyor...',
     },
 }
 
