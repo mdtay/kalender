@@ -32,6 +32,7 @@ FEHLER_LOG = os.path.join(RAHMEN_DIR, 'kiosk_fehler.log')
 EREIGNIS_LOG = os.path.join(RAHMEN_DIR, 'kiosk_ereignisse.log')
 HAENGER_SCHWELLE_MS = 2000
 HDMI_RESYNC_RUHE_MS = 30000
+HDMI_AUSGANG = 'HDMI-1'
 SYNC_FORTSCHRITT_PATH = os.path.join(RAHMEN_DIR, 'sync_progress.json')
 IST_LINUX = sys.platform.startswith('linux')
 FOTOS_DIR = os.environ.get(
@@ -586,20 +587,20 @@ class App:
         self._zahnrad_icon_zeichnen(rect.center, rect.width // 2 - 8, (235, 235, 235))
 
     def hdmi_neu_synchronisieren(self):
-        """Signal per DPMS kurz aus und wieder an - wirkt wie HDMI-Stecker
+        """HDMI-Ausgang komplett ab- und neu aufbauen - wirkt wie Stecker
         ziehen. Noetig, weil das Display gelegentlich schwarz bleibt, obwohl
-        der Pi weiter sendet (und das nicht erkennen kann)."""
+        der Pi weiter sendet (und das nicht erkennen kann). Nur DPMS aus/an
+        reichte am echten Display nicht, xrandr off/mode schon."""
         if not IST_LINUX or self._hdmi_resync_laeuft:
             return
         self._hdmi_resync_laeuft = True
 
         def arbeit():
             try:
-                subprocess.run(['xset', 'dpms', 'force', 'off'], check=False, timeout=5)
-                time.sleep(1)
-                for cmd in (['xset', 'dpms', 'force', 'on'], ['xset', '-dpms'],
-                            ['xset', 's', 'off'], ['xset', 's', 'noblank']):
-                    subprocess.run(cmd, check=False, timeout=5)
+                subprocess.run(['xrandr', '--output', HDMI_AUSGANG, '--off'], check=False, timeout=10)
+                time.sleep(3)
+                subprocess.run(['xrandr', '--output', HDMI_AUSGANG, '--auto',
+                                '--pos', '0x0', '--primary'], check=False, timeout=10)
                 ereignis_loggen("HDMI_RESYNC")
             except Exception:
                 fehler_loggen('HDMI-Neusynchronisierung')
