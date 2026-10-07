@@ -1,6 +1,10 @@
 [Unit]
 Description=Kalender Bilderrahmen Sync (holt neue Fotos vom Haupt-Pi)
-After=network.target
+# Persistent=true im Timer holt verpasste Laeufe direkt nach dem Booten nach -
+# dann muss das WLAN schon stehen und der Foto-Stick eingebunden sein.
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/mnt/rahmen-fotos
 
 [Service]
 Type=oneshot
