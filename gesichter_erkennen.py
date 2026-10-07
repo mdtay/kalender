@@ -1,11 +1,14 @@
 """
 Automatische Gesichtserkennung für hochgeladene Fotos.
 
-Läuft periodisch (per systemd-Timer, siehe deploy/kalender-gesichter.*) neben der
-eigentlichen Flask-App. Trainiert ein leichtgewichtiges LBPH-Modell aus den
-Avatar-Fotos der hinterlegten Personen und gleicht damit alle noch nicht
-verarbeiteten Fotos ab. Treffer werden als "auto"-Vorschlag in bild_personen
-eingetragen (bestätigte Zuordnungen werden nie überschrieben).
+Wird von app.py nach jedem Upload im Hintergrund gestartet. Trainiert ein
+leichtgewichtiges LBPH-Modell aus den Avatar-Fotos der hinterlegten Personen
+und gleicht damit alle noch nicht verarbeiteten Fotos ab.
+
+Treffer landen NUR als Vorschlag in gesicht_vorschlaege - nie in
+bild_personen. Erst wenn der Nutzer das Bild speichert, werden sie zu echten
+Zuordnungen (und erst dann sieht der Bilderrahmen sie). Fotos mit bereits
+gespeicherten Personen werden gar nicht angefasst.
 
 Eigene DB-Verbindung wie migrieren.py — kein Import von app.py nötig/gewollt.
 """
@@ -18,6 +21,7 @@ import numpy as np
 DB_PATH = os.path.join(os.path.dirname(__file__), 'kalender.db')
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
 MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models', 'face_detector')
+SPERR_PATH = os.path.join(os.path.dirname(__file__), 'gesichter.lock')
 
 VIDEO_EXTENSIONS = {'mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v'}
 
@@ -100,10 +104,32 @@ def trainingsdaten_aufbauen(conn, detect_faces):
     return bilder, labels
 
 
+def bereits_markierte_ueberspringen(conn):
+    """Fotos mit gespeicherten Personen nie anfassen - nur ihren Status setzen,
+    damit sie nicht in jedem Lauf wieder als 'ausstehend' auftauchen."""
+    conn.execute(
+        "UPDATE bilder SET gesicht_status='uebersprungen' "
+        "WHERE gesicht_status='ausstehend' AND id IN (SELECT bild_id FROM bild_personen)"
+    )
+    conn.commit()
+
+
 def hauptlauf():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # Gleiche Tabelle wie in app.py init_db() - falls die App noch nicht neu
+    # gestartet wurde.
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS gesicht_vorschlaege (
+            bild_id INTEGER REFERENCES bilder(id) ON DELETE CASCADE,
+            person_id INTEGER REFERENCES personen(id) ON DELETE CASCADE,
+            PRIMARY KEY (bild_id, person_id)
+        )
+    ''')
+    conn.commit()
+
+    bereits_markierte_ueberspringen(conn)
 
     detect_faces = lade_detektor()
 
@@ -118,48 +144,81 @@ def hauptlauf():
     print(f"LBPH-Modell trainiert mit {len(trainingsbilder)} Gesicht(ern) von "
           f"{len(set(labels))} Person(en).")
 
-    kandidaten = conn.execute(
-        "SELECT id, dateiname FROM bilder WHERE gesicht_status='ausstehend' ORDER BY id LIMIT ?",
-        (BATCH_LIMIT,)
-    ).fetchall()
+    verarbeitet = uebersprungen = fehler = vorschlaege = 0
 
-    verarbeitet = uebersprungen = fehler = 0
+    # In Batches, bis nichts mehr offen ist - waehrenddessen hochgeladene
+    # Bilder werden so noch im selben Lauf mit erledigt.
+    while True:
+        bereits_markierte_ueberspringen(conn)
+        kandidaten = conn.execute(
+            "SELECT id, dateiname FROM bilder WHERE gesicht_status='ausstehend' ORDER BY id LIMIT ?",
+            (BATCH_LIMIT,)
+        ).fetchall()
+        if not kandidaten:
+            break
 
-    for bild in kandidaten:
-        bild_id, dateiname = bild['id'], bild['dateiname']
-        if ist_video(dateiname):
-            conn.execute("UPDATE bilder SET gesicht_status='uebersprungen' WHERE id=?", (bild_id,))
-            conn.commit()
-            uebersprungen += 1
-            continue
+        for bild in kandidaten:
+            bild_id, dateiname = bild['id'], bild['dateiname']
+            if ist_video(dateiname):
+                conn.execute("UPDATE bilder SET gesicht_status='uebersprungen' WHERE id=?", (bild_id,))
+                conn.commit()
+                uebersprungen += 1
+                continue
 
-        try:
-            pfad = os.path.join(UPLOAD_FOLDER, dateiname)
-            image = cv2.imread(pfad)
-            if image is None:
-                raise ValueError(f"Bilddatei nicht lesbar: {dateiname}")
+            try:
+                pfad = os.path.join(UPLOAD_FOLDER, dateiname)
+                image = cv2.imread(pfad)
+                if image is None:
+                    raise ValueError(f"Bilddatei nicht lesbar: {dateiname}")
 
-            for box in detect_faces(image):
-                gesicht = gesicht_zuschneiden(image, box)
-                person_id, distanz = recognizer.predict(gesicht)
-                if distanz <= LBPH_MAX_DISTANCE:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO bild_personen (bild_id, person_id, quelle) VALUES (?, ?, 'auto')",
-                        (bild_id, int(person_id))
-                    )
+                treffer = set()
+                for box in detect_faces(image):
+                    person_id, distanz = recognizer.predict(gesicht_zuschneiden(image, box))
+                    if distanz <= LBPH_MAX_DISTANCE:
+                        treffer.add(int(person_id))
 
-            conn.execute("UPDATE bilder SET gesicht_status='erledigt' WHERE id=?", (bild_id,))
-            conn.commit()
-            verarbeitet += 1
-        except Exception as exc:
-            print(f"  Fehler bei Bild {bild_id} ('{dateiname}'): {exc}")
-            conn.execute("UPDATE bilder SET gesicht_status='fehler' WHERE id=?", (bild_id,))
-            conn.commit()
-            fehler += 1
+                # Nutzer koennte das Bild inzwischen selbst markiert haben -
+                # dann keine Vorschlaege mehr.
+                markiert = conn.execute(
+                    "SELECT 1 FROM bild_personen WHERE bild_id=? LIMIT 1", (bild_id,)
+                ).fetchone()
+                if not markiert:
+                    for person_id in treffer:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO gesicht_vorschlaege (bild_id, person_id) VALUES (?, ?)",
+                            (bild_id, person_id)
+                        )
+                        vorschlaege += 1
+                conn.execute("UPDATE bilder SET gesicht_status='erledigt' WHERE id=?", (bild_id,))
+                conn.commit()
+                verarbeitet += 1
+            except Exception as exc:
+                print(f"  Fehler bei Bild {bild_id} ('{dateiname}'): {exc}")
+                conn.execute("UPDATE bilder SET gesicht_status='fehler' WHERE id=?", (bild_id,))
+                conn.commit()
+                fehler += 1
 
     conn.close()
-    print(f"Fertig: {verarbeitet} verarbeitet, {uebersprungen} übersprungen, {fehler} Fehler.")
+    print(f"Fertig: {verarbeitet} verarbeitet, {vorschlaege} Vorschlaege, "
+          f"{uebersprungen} übersprungen, {fehler} Fehler.")
+
+
+def mit_sperre_ausfuehren():
+    """Jeder Upload startet einen Lauf - laeuft schon einer, beendet sich der
+    neue sofort (der laufende arbeitet alle offenen Bilder mit ab)."""
+    try:
+        import fcntl
+    except ImportError:  # Windows-Testlauf
+        hauptlauf()
+        return
+    with open(SPERR_PATH, 'w') as sperre:
+        try:
+            fcntl.flock(sperre, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("Gesichtserkennung laeuft bereits - uebersprungen.")
+            return
+        hauptlauf()
 
 
 if __name__ == '__main__':
-    hauptlauf()
+    mit_sperre_ausfuehren()

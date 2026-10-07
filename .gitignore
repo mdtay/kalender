@@ -1,7 +1,10 @@
 ﻿kalender.db
 .secret_key
 __pycache__/
-static/uploads/
+# ohne Schraegstrich: auf dem Pi ist das ein Symlink, den "static/uploads/" nicht erfasst
+static/uploads
+tmp_export/
+gesichter.lock
 *.pyc
 .claude/
 rahmen_export/

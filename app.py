@@ -1,7 +1,9 @@
 import os
 import io
+import sys
 import shutil
 import subprocess
+import tempfile
 import zipfile
 import sqlite3
 import calendar
@@ -234,6 +236,11 @@ def init_db():
             schluessel TEXT PRIMARY KEY,
             wert TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS gesicht_vorschlaege (
+            bild_id INTEGER REFERENCES bilder(id) ON DELETE CASCADE,
+            person_id INTEGER REFERENCES personen(id) ON DELETE CASCADE,
+            PRIMARY KEY (bild_id, person_id)
+        );
         INSERT OR IGNORE INTO einstellungen VALUES ('darstellung',  'punkte');
         INSERT OR IGNORE INTO einstellungen VALUES ('farbe_theme',      'dunkel');
         INSERT OR IGNORE INTO einstellungen VALUES ('farbe_akzent',    '#3b82f6');
@@ -277,6 +284,41 @@ def init_db():
     except Exception:
         pass
     conn.close()
+
+
+def vorschlaege_einmischen(conn, bild_personen, bild_ids):
+    """Gesichtserkennungs-Vorschlaege als 'auto' in bild_personen einblenden -
+    nur fuer Bilder ohne jede gespeicherte Person. Gespeichert werden sie erst,
+    wenn der Nutzer das Bild speichert; bis dahin sieht der Rahmen nichts davon."""
+    ohne_personen = [bid for bid in bild_ids if not bild_personen.get(bid)]
+    if not ohne_personen:
+        return
+    ph = ','.join('?' * len(ohne_personen))
+    for row in conn.execute(
+        f"SELECT bild_id, person_id FROM gesicht_vorschlaege WHERE bild_id IN ({ph})", ohne_personen
+    ):
+        bild_personen.setdefault(row['bild_id'], {})[row['person_id']] = 'auto'
+
+
+def gesichtserkennung_anstossen():
+    """Startet die Gesichtserkennung im Hintergrund (blockiert den Upload nicht).
+    Laeuft schon eine, beendet sich die neue sofort - die laufende arbeitet
+    alle offenen Bilder ab."""
+    skript = os.path.join(os.path.dirname(__file__), 'gesichter_erkennen.py')
+    try:
+        with open(os.path.join(_log_dir, 'gesichter.log'), 'a') as log:
+            subprocess.Popen([sys.executable, skript], stdout=log, stderr=subprocess.STDOUT,
+                             start_new_session=True)
+    except Exception as exc:
+        app.logger.error(f"Gesichtserkennung konnte nicht gestartet werden: {exc}")
+
+
+def sicherer_weiter_link(ziel, ersatz):
+    """Nur interne Pfade zulassen - sonst koennte ein Link nach dem Login auf
+    eine fremde Seite weiterleiten."""
+    if ziel and ziel.startswith('/') and not ziel.startswith('//') and '\\' not in ziel:
+        return ziel
+    return ersatz
 
 
 def allowed_file(filename):
@@ -365,7 +407,7 @@ def login():
         if check_password_hash(passwort_hash, request.form.get('passwort', '')):
             session.permanent = True
             session['eingeloggt'] = True
-            return redirect(request.args.get('next') or url_for('index'))
+            return redirect(sicherer_weiter_link(request.args.get('next'), url_for('index')))
         fehler = 'Falsches Passwort.'
     return render_template('login.html', fehler=fehler)
 
@@ -408,6 +450,8 @@ def index():
 @app.route('/monat/<int:jahr>/<int:monat>')
 @login_required
 def monat(jahr, monat):
+    if not (1 <= monat <= 12 and 1 <= jahr <= 9999):
+        return redirect(url_for('index'))
     kategorie_filter = request.args.getlist('kategorien')
     person_filter = request.args.getlist('personen')
     cat_ids = [int(k) for k in kategorie_filter if k.isdigit()]
@@ -523,6 +567,10 @@ def monat(jahr, monat):
 @app.route('/tag/<datum>')
 @login_required
 def tag(datum):
+    try:
+        datetime.strptime(datum, '%Y-%m-%d')
+    except ValueError:
+        return redirect(url_for('index'))
     conn = get_db()
 
     ereignisse = conn.execute(
@@ -553,6 +601,8 @@ def tag(datum):
                 "SELECT person_id, quelle FROM bild_personen WHERE bild_id=?", (bild['id'],)
             ).fetchall()
             bild_personen[bild['id']] = {r['person_id']: r['quelle'] for r in bp}
+    vorschlaege_einmischen(conn, bild_personen,
+                           [b['id'] for bilder in bilder_pro_ereignis.values() for b in bilder])
 
     conn.close()
 
@@ -641,6 +691,7 @@ def ereignis_bearbeiten(eid):
             "SELECT person_id, quelle FROM bild_personen WHERE bild_id=?", (bild['id'],)
         ).fetchall()
         bild_personen[bild['id']] = {r['person_id']: r['quelle'] for r in bp}
+    vorschlaege_einmischen(conn, bild_personen, [b['id'] for b in bilder])
 
     conn.close()
 
@@ -687,6 +738,7 @@ def bilder_hochladen(eid):
                 except Exception as exc:
                     app.logger.error(f"Fehler beim Hochladen von '{file.filename}': {exc}")
         conn.commit()
+        gesichtserkennung_anstossen()
     conn.close()
     return redirect(url_for('ereignis_bearbeiten', eid=eid) + '#bilder')
 
@@ -737,11 +789,14 @@ def bild_meta(bild_id):
         p = conn.execute("SELECT id FROM personen WHERE name=?", (name,)).fetchone()
         conn.execute("INSERT OR IGNORE INTO bild_personen (bild_id, person_id) VALUES (?,?)", (bild_id, p['id']))
 
+    # Gespeichert = vom Nutzer entschieden; abgewaehlte Vorschlaege sollen nicht wiederkommen.
+    conn.execute("DELETE FROM gesicht_vorschlaege WHERE bild_id=?", (bild_id,))
+
     row = conn.execute("SELECT ereignis_id FROM bilder WHERE id=?", (bild_id,)).fetchone()
     eid = row['ereignis_id'] if row else None
     conn.commit()
     conn.close()
-    next_url = request.form.get('next')
+    next_url = sicherer_weiter_link(request.form.get('next'), None)
     if next_url:
         return redirect(next_url)
     if eid:
@@ -763,8 +818,7 @@ def bild_zuweisen(bild_id):
                          (eid, e['datum'], bild_id))
             conn.commit()
         conn.close()
-    next_url = request.form.get('next')
-    return redirect(next_url if next_url else url_for('diashow'))
+    return redirect(sicherer_weiter_link(request.form.get('next'), url_for('diashow')))
 
 
 # ── Bild vom Ereignis lösen ────────────────────────────────────────────────────
@@ -776,8 +830,7 @@ def bild_loesen(bild_id):
     conn.execute("UPDATE bilder SET ereignis_id = NULL WHERE id = ?", (bild_id,))
     conn.commit()
     conn.close()
-    next_url = request.form.get('next')
-    return redirect(next_url if next_url else url_for('diashow'))
+    return redirect(sicherer_weiter_link(request.form.get('next'), url_for('diashow')))
 
 
 # ── Bild löschen ───────────────────────────────────────────────────────────────
@@ -796,6 +849,8 @@ def bild_drehen(bild_id):
             conn.execute("UPDATE bilder SET gesicht_status='ausstehend' WHERE id=?", (bild_id,))
             conn.commit()
     conn.close()
+    if not bild:
+        return redirect(url_for('index'))
     return redirect(request.referrer or url_for('ereignis_bearbeiten', eid=bild['ereignis_id']))
 
 
@@ -819,8 +874,7 @@ def bild_loeschen(bild_id):
         conn.execute("DELETE FROM bilder WHERE id=?", (bild_id,))
         conn.commit()
         conn.close()
-        next_url = request.form.get('next')
-        return redirect(next_url if next_url else url_for('ereignis_bearbeiten', eid=eid))
+        return redirect(sicherer_weiter_link(request.form.get('next'), url_for('ereignis_bearbeiten', eid=eid)))
     conn.close()
     return redirect(url_for('index'))
 
@@ -1123,6 +1177,7 @@ def diashow():
             f"WHERE bild_id IN ({ph}) GROUP BY bild_id", bild_ids
         ):
             bild_tags_map[row['bild_id']] = row['tags'] or ''
+        vorschlaege_einmischen(conn, bild_personen, bild_ids)
 
     conn.close()
 
@@ -1165,36 +1220,73 @@ def diashow_download():
     ).fetchall()
     conn.close()
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for bild in bilder:
-            pfad = os.path.join(app.config['UPLOAD_FOLDER'], bild['dateiname'])
-            if os.path.exists(pfad):
-                zf.write(pfad, f"{bild['datum']}_{bild['dateiname']}")
-    buf.seek(0)
-
-    return send_file(buf, mimetype='application/zip', as_attachment=True,
-                     download_name='kalender_bilder.zip')
+    dateien = []
+    for bild in bilder:
+        pfad = os.path.join(app.config['UPLOAD_FOLDER'], bild['dateiname'])
+        if os.path.exists(pfad):
+            dateien.append((pfad, f"{bild['datum']}_{bild['dateiname']}"))
+    return zip_herunterladen(dateien, 'kalender_bilder.zip')
 
 
 # ── Backup / Export ────────────────────────────────────────────────────────────
 
+EXPORT_TMP_DIR = os.path.join(os.path.dirname(__file__), 'tmp_export')
+
+
+def zip_herunterladen(dateien, download_name):
+    """Baut das Zip in einer Datei auf der Platte statt im Arbeitsspeicher -
+    bei vielen Fotos wuerde der Pi sonst den Speicher sprengen. Fotos/Videos
+    sind schon komprimiert, deshalb ohne erneute Kompression (ZIP_STORED).
+    Die Datei wird nach dem Senden geloescht. Nicht /tmp: das liegt auf dem
+    Pi im Arbeitsspeicher."""
+    os.makedirs(EXPORT_TMP_DIR, exist_ok=True)
+    # Reste abgebrochener Downloads wegraeumen
+    for alt in os.listdir(EXPORT_TMP_DIR):
+        alt_pfad = os.path.join(EXPORT_TMP_DIR, alt)
+        try:
+            if alt.endswith('.zip') and datetime.now().timestamp() - os.path.getmtime(alt_pfad) > 3600:
+                os.remove(alt_pfad)
+        except OSError:
+            pass
+    fd, zip_pfad = tempfile.mkstemp(suffix='.zip', dir=EXPORT_TMP_DIR)
+    os.close(fd)
+    with zipfile.ZipFile(zip_pfad, 'w', zipfile.ZIP_STORED, allowZip64=True) as zf:
+        for pfad, name in dateien:
+            zf.write(pfad, name)
+    antwort = send_file(zip_pfad, mimetype='application/zip', as_attachment=True,
+                        download_name=download_name)
+
+    def aufraeumen():
+        try:
+            os.remove(zip_pfad)
+        except OSError:
+            pass
+    antwort.call_on_close(aufraeumen)
+    return antwort
+
+
 @app.route('/export')
 @login_required
 def export():
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        if os.path.exists(DB_PATH):
-            zf.write(DB_PATH, 'kalender.db')
+    os.makedirs(EXPORT_TMP_DIR, exist_ok=True)
+    # Konsistente Kopie der laufenden Datenbank (nicht einfach die Datei kopieren)
+    db_kopie = os.path.join(EXPORT_TMP_DIR, f'kalender_{os.getpid()}.db')
+    quelle = get_db()
+    ziel = sqlite3.connect(db_kopie)
+    quelle.backup(ziel)
+    ziel.close()
+    quelle.close()
+    try:
+        dateien = [(db_kopie, 'kalender.db')]
         upload_dir = app.config['UPLOAD_FOLDER']
         if os.path.exists(upload_dir):
             for fname in os.listdir(upload_dir):
                 fpath = os.path.join(upload_dir, fname)
                 if os.path.isfile(fpath):
-                    zf.write(fpath, f"uploads/{fname}")
-    buf.seek(0)
-    return send_file(buf, mimetype='application/zip', as_attachment=True,
-                     download_name=f'kalender_backup_{date.today().isoformat()}.zip')
+                    dateien.append((fpath, f"uploads/{fname}"))
+        return zip_herunterladen(dateien, f'kalender_backup_{date.today().isoformat()}.zip')
+    finally:
+        os.remove(db_kopie)
 
 
 # ── Einstellungen ──────────────────────────────────────────────────────────────
