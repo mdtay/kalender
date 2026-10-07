@@ -19,20 +19,24 @@ verloren gehen - vor jedem Eingriff dort zuerst sichern.
 - [x] Geaenderte Fotos (gedreht) und geaenderte Daten kommen nie beim Rahmen an.
       Export schreibt Aenderungszeit mit, Sync holt geaenderte Dateien neu.
 - [x] Gleichzeitige Syncs (Knopf + Timer) koennen kollidieren - Dateisperre.
-- [ ] Gesichtserkennung auf dem Haupt-Pi nie aktiv. Vor dem Einschalten
-      klaeren: sollen unbestaetigte Auto-Treffer den Rahmen-Filter beeinflussen?
-- [ ] "Backup herunterladen" baut das ganze Zip im Arbeitsspeicher.
+- [x] Gesichtserkennung aktiv - nur als Vorschlag: startet nach jedem Upload,
+      nur fuer Fotos ohne Personen, wird erst beim Speichern zur Markierung.
+- [ ] Gesichtserkennung verbessern: Profilfotos fuer alle Personen hinterlegen
+      (aktuell nur Alvar, Yuna) und genaueren DNN-Detektor nachruesten
+      (models/face_detector/README.md). Probelauf: ca. 60 % Trefferquote.
+- [x] "Backup herunterladen" baut das Zip jetzt auf der Platte (getestet: 603 MB).
 
 ## Klein
 
-- [ ] `backup.sh` kopiert die laufende DB per `cp` (Kopie kann inkonsistent
-      sein) und sichert keine Fotos.
+- [x] `backup.sh` nutzt jetzt die SQLite-Backup-Funktion mit Integritaetspruefung.
+- [ ] Naechtliches Backup sichert keine Fotos (nur die Datenbank).
 - [ ] Logdateien wachsen unbegrenzt (`~/kiosk.log` schon 7 MB).
 - [ ] "Bildschirm aus"/Nachtmodus: `vcgencmd display_power` wirkt mit dem
       KMS-Treiber nicht, es wird nur schwarz gezeichnet.
-- [ ] Haupt-Pi: `static/uploads` versehentlich in Git vorgemerkt.
+- [x] Haupt-Pi: `static/uploads` versehentlich in Git vorgemerkt.
 - [ ] Geloeschte Personen bleiben in der Personenliste des Rahmens.
-- [ ] Ungueltige URLs (z.B. `/tag/abc`) erzeugen Fehlerseiten.
+- [x] Ungueltige URLs (z.B. `/tag/abc`) leiten jetzt zur Startseite um.
+- [x] Weiterleitungen nach Login/Speichern nur noch auf interne Seiten.
 
 ## Hardware (Bilderrahmen)
 
