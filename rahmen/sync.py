@@ -68,7 +68,6 @@ def init_db(conn):
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('anzeige_dauer_sek', '8')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_typ', 'fade')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_dauer_ms', '800')")
-    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('videos_aktiv', '1')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('datum_anzeigen', '1')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_aktiv', '0')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_start_stunde', '22')")
@@ -112,9 +111,10 @@ def einstellung(conn, schluessel, default):
     return row['wert'] if row else default
 
 
-def kandidaten_berechnen(manifest, erlaubte_ids, videos_aktiv):
+def kandidaten_berechnen(manifest, erlaubte_ids):
     """Liefert {bild_id: (dateiname, datum, ist_video)} fuer alle Fotos, die
-    laut Personenfilter UND Video-Einstellung geladen werden duerfen."""
+    laut Personenfilter geladen werden duerfen. Videos nie - der Rahmen ist
+    ein reiner Bilder-Slider (der Pi 3 kommt mit HEVC-Videos nicht klar)."""
     tags_pro_bild = {}
     for row in manifest.execute("SELECT bild_id, person_id FROM bild_personen").fetchall():
         tags_pro_bild.setdefault(row['bild_id'], set()).add(row['person_id'])
@@ -126,7 +126,7 @@ def kandidaten_berechnen(manifest, erlaubte_ids, videos_aktiv):
             continue  # keine Person getaggt -> nicht anzeigen (Datenschutz-Entscheidung)
         if not personen.issubset(erlaubte_ids):
             continue  # mindestens eine nicht erlaubte Person auf dem Foto
-        if b['ist_video'] and not videos_aktiv:
+        if b['ist_video']:
             continue
         kandidaten[b['id']] = (b['dateiname'], b['datum'], b['ist_video'])
     return kandidaten
@@ -233,9 +233,7 @@ def hauptlauf():
 
         personen_cache_aktualisieren(conn, manifest)
         erlaubte_ids = erlaubte_personen_ids(conn)
-        videos_aktiv = einstellung(conn, 'videos_aktiv', '1') == '1'
-
-        kandidaten = kandidaten_berechnen(manifest, erlaubte_ids, videos_aktiv)
+        kandidaten = kandidaten_berechnen(manifest, erlaubte_ids)
         manifest.close()
 
         neu_ids, entfernen_ids, vorhandene = fotos_abgleichen(conn, kandidaten)

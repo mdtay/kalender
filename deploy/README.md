@@ -84,8 +84,9 @@ Eingabe + `pygame`, kein Chromium, kein Webserver:
 
 ```bash
 sudo raspi-config nonint do_boot_behaviour B2   # Konsolen-Autologin
-sudo apt install -y xserver-xorg xinit python3-pygame python3-pil mpv
+sudo apt install -y xserver-xorg xinit python3-pygame python3-pil
 ```
+Der Rahmen zeigt nur Fotos, keine Videos — `mpv` wird nicht mehr gebraucht.
 `python3-pygame`/`python3-pil` landen im System-Python, nicht automatisch im
 venv — venv deshalb mit `--system-site-packages` anlegen (spart das
 langsame Kompilieren von pygame per pip auf dem Pi 3):
@@ -126,3 +127,16 @@ Kiosk neu starten (kein volles Reboot nötig):
 ```bash
 sudo systemctl restart getty@tty1.service
 ```
+
+**7. WLAN über den Touchscreen** (Einstellungen → "WLAN einrichten") nutzt
+`nmcli`. Damit `kiosk.py` neue WLAN-Profile anlegen darf, ohne nach dem
+sudo-Passwort zu fragen, einmalig eine sudoers-Regel nur für `nmcli`
+anlegen:
+```bash
+echo 'tay ALL=(root) NOPASSWD: /usr/bin/nmcli' | sudo tee /etc/sudoers.d/rahmen-wlan
+sudo chmod 440 /etc/sudoers.d/rahmen-wlan
+sudo visudo -c
+```
+Neue Zugangsdaten landen immer in einem neuen Profil `rahmen-<SSID>-<Zeit>`.
+Schlägt die Verbindung fehl, wird nur dieses neue Profil gelöscht, das
+bisherige WLAN bleibt erhalten.

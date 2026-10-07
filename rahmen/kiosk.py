@@ -15,11 +15,13 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import traceback
 from collections import deque
 
 import pygame
 
+import wlan
 from i18n import t
 
 RAHMEN_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -108,7 +110,6 @@ def init_db():
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('anzeige_dauer_sek', '8')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_typ', 'fade')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('uebergang_dauer_ms', '800')")
-    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('videos_aktiv', '1')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('datum_anzeigen', '1')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_aktiv', '0')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_start_stunde', '22')")
@@ -161,13 +162,9 @@ DATUM_AUSBLEND_DAUER_MS = 400
 
 
 def fotos_laden(conn):
-    videos_aktiv = einstellung_holen(conn, 'videos_aktiv', '1') == '1'
-    if videos_aktiv:
-        rows = conn.execute("SELECT id, lokaler_dateiname, ist_video, favorit, datum FROM fotos").fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT id, lokaler_dateiname, ist_video, favorit, datum FROM fotos WHERE ist_video=0"
-        ).fetchall()
+    rows = conn.execute(
+        "SELECT id, lokaler_dateiname, favorit, datum FROM fotos WHERE ist_video=0"
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -275,6 +272,19 @@ class App:
         self._fv_jahr_rect = None
         self._fv_monat_rect = None
 
+        # WLAN-Zustand
+        self.wlan_modus = 'liste'
+        self.wlan_netze = []
+        self.wlan_aktuell = None
+        self.wlan_meldung = None
+        self.wlan_laeuft = None
+        self.wlan_ausgewaehlt = None
+        self.wlan_passwort = ''
+        self.wlan_ebene = 'klein'
+        self._wlan_knoepfe = {}
+        self._wlan_netz_rects = []
+        self._wlan_tasten = []
+
     def t(self, schluessel):
         return t(schluessel, self.sprache)
 
@@ -298,23 +308,6 @@ class App:
             skala = min(self.w / iw, self.h / ih)
         groesse = (max(1, int(iw * skala)), max(1, int(ih * skala)))
         return pygame.transform.smoothscale(img, groesse)
-
-    def video_abspielen(self, pfad):
-        name = os.path.basename(pfad)
-        ereignis_loggen(f"VIDEO_START {name}")
-        start = pygame.time.get_ticks()
-        try:
-            ergebnis = subprocess.run(
-                ['mpv', '--fullscreen', '--really-quiet', '--quiet', '--no-input-default-bindings', pfad],
-                check=False
-            )
-            exit_code = ergebnis.returncode
-        except FileNotFoundError:
-            exit_code = 'mpv_fehlt'  # z.B. lokaler Windows-Testlauf - Video ueberspringen
-        dauer_s = (pygame.time.get_ticks() - start) / 1000
-        ereignis_loggen(f"VIDEO_ENDE {name} dauer={dauer_s:.1f}s exit={exit_code}")
-        # Die blockierende Videozeit darf nicht als Haenger der Hauptschleife zaehlen.
-        self._frame_start = pygame.time.get_ticks()
 
     def bildschirm_ausschalten(self):
         if IST_LINUX:
@@ -412,9 +405,6 @@ class App:
             self.zuletzt_gezeigt.append(foto['id'])
             self._aktuelle_datei = foto['lokaler_dateiname']
             pfad = os.path.join(FOTOS_DIR, foto['lokaler_dateiname'])
-            if foto['ist_video']:
-                self.video_abspielen(pfad)
-                continue
             surface = self.bild_skaliert_laden(pfad)
             if surface is None:
                 continue
@@ -604,7 +594,6 @@ class App:
             y += 36
         y += 28
 
-        zeilen.append(('video_toggle', None, y)); y += row_h + gap
         zeilen.append(('datum_toggle', None, y)); y += row_h + gap
         zeilen.append(('dauer_stepper', None, y)); y += row_h + gap
         zeilen.append(('uebergang_dauer', None, y)); y += row_h + gap
@@ -616,6 +605,7 @@ class App:
             zeilen.append(('nacht_start_stepper', None, y)); y += row_h + gap
             zeilen.append(('nacht_ende_stepper', None, y)); y += row_h + gap
         y += 20
+        zeilen.append(('button_wlan', None, y)); y += row_h + gap
         zeilen.append(('button_sync', None, y)); y += row_h + gap
         zeilen.append(('status', None, y)); y += 58
 
@@ -759,9 +749,6 @@ class App:
             rect = pygame.Rect(28, y, self.w - 56, 60)
             if art == 'top_buttons':
                 self._settings_top_buttons_zeichnen(pygame.Rect(28, y, self.w - 56, 54))
-            elif art == 'video_toggle':
-                an = einstellung_holen(self.conn, 'videos_aktiv', '1') == '1'
-                self._zeile_toggle(rect, self.t('videos_label'), an)
             elif art == 'datum_toggle':
                 an = einstellung_holen(self.conn, 'datum_anzeigen', '1') == '1'
                 self._zeile_toggle(rect, self.t('datum_anzeigen_label'), an)
@@ -786,6 +773,8 @@ class App:
             elif art == 'nacht_ende_stepper':
                 wert = einstellung_holen(self.conn, 'nacht_ende_stunde', '7')
                 self._zeile_stepper(rect, f"{self.t('nacht_ende_label')}: {int(wert):02d}:00")
+            elif art == 'button_wlan':
+                self._zeile_button(rect, self.t('wlan_button_label'))
             elif art == 'button_sync':
                 if self.sync_laeuft():
                     self._sync_fortschritt_zeichnen(rect)
@@ -851,9 +840,6 @@ class App:
                         self._bildschirm_auto_aus = False
                         return
                 return
-            elif art == 'video_toggle':
-                aktuell = einstellung_holen(self.conn, 'videos_aktiv', '1')
-                einstellung_setzen(self.conn, 'videos_aktiv', '0' if aktuell == '1' else '1')
             elif art == 'datum_toggle':
                 aktuell = einstellung_holen(self.conn, 'datum_anzeigen', '1')
                 einstellung_setzen(self.conn, 'datum_anzeigen', '0' if aktuell == '1' else '1')
@@ -877,6 +863,9 @@ class App:
                 self._stunden_stepper_tap(x, rect, 'nacht_start_stunde')
             elif art == 'nacht_ende_stepper':
                 self._stunden_stepper_tap(x, rect, 'nacht_ende_stunde')
+            elif art == 'button_wlan':
+                self.wlan_oeffnen()
+                return
             elif art == 'button_sync':
                 self.sync_starten()
             self._settings_zeilen = self.settings_zeilen_aufbauen()
@@ -912,15 +901,14 @@ class App:
         return [r['jahr'] for r in rows]
 
     def _fv_where_klausel(self):
-        bedingungen, parameter = [], []
+        bedingungen, parameter = ['ist_video=0'], []
         if self.fv_filter_jahr:
             bedingungen.append("substr(datum,1,4)=?")
             parameter.append(self.fv_filter_jahr)
         if self.fv_filter_monat:
             bedingungen.append("substr(datum,6,2)=?")
             parameter.append(f"{self.fv_filter_monat:02d}")
-        where = ("WHERE " + " AND ".join(bedingungen)) if bedingungen else ""
-        return where, parameter
+        return "WHERE " + " AND ".join(bedingungen), parameter
 
     def fotos_verwalten_laden_seite(self):
         pro_seite = self.FV_SPALTEN * self.FV_REIHEN
@@ -1017,7 +1005,7 @@ class App:
             rect = pygame.Rect(x, y, zelle, zelle)
             self._fv_rects.append((rect, foto))
 
-            thumb = None if foto['ist_video'] else self.thumbnail_laden(foto['lokaler_dateiname'])
+            thumb = self.thumbnail_laden(foto['lokaler_dateiname'])
             pygame.draw.rect(self.screen, FARBE_KARTE, rect, border_radius=14)
             pygame.draw.rect(self.screen, FARBE_KARTE_RAND, rect, width=2, border_radius=14)
             if thumb:
@@ -1030,13 +1018,6 @@ class App:
                 self.screen.set_clip(rect.inflate(-4, -4))
                 self.screen.blit(thumb, thumb_rect)
                 self.screen.set_clip(None)
-            elif foto['ist_video']:
-                pygame.draw.circle(self.screen, FARBE_SEITE, rect.center, 26)
-                pygame.draw.polygon(self.screen, FARBE_AKZENT_DUNKEL, [
-                    (rect.centerx - 8, rect.centery - 13),
-                    (rect.centerx - 8, rect.centery + 13),
-                    (rect.centerx + 14, rect.centery),
-                ])
 
             stern_center = (rect.right - 24, rect.top + 24)
             stern_farbe = (245, 158, 11) if foto['favorit'] else FARBE_KARTE_RAND
@@ -1104,6 +1085,243 @@ class App:
             self.state = 'SETTINGS'
             self._settings_zeilen = self.settings_zeilen_aufbauen()
 
+    # ── WLAN ─────────────────────────────────────────────────────────
+
+    TASTATUR = {
+        'klein': ['1234567890', 'qwertzuiop', 'asdfghjkl', 'yxcvbnm'],
+        'gross': ['1234567890', 'QWERTZUIOP', 'ASDFGHJKL', 'YXCVBNM'],
+        'zeichen': ['!@#$%&*()=', '-_+/\\:;\'"?', '.,<>[]{}~|^', 'çğıöşüäßÇĞİÖŞÜÄ'],
+    }
+
+    def wlan_oeffnen(self):
+        self.state = 'WLAN'
+        self.wlan_modus = 'liste'
+        self.wlan_meldung = None
+        self._wlan_suche_starten()
+
+    def _wlan_suche_starten(self):
+        if self.wlan_laeuft:
+            return
+        self.wlan_laeuft = 'suche'
+
+        def arbeit():
+            try:
+                self.wlan_aktuell, self.wlan_netze = wlan.netzwerke_suchen()
+            except Exception as exc:
+                self.wlan_netze = []
+                self.wlan_meldung = (f"{self.t('wlan_fehler')}: {exc}", False)
+            finally:
+                self.wlan_laeuft = None
+
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def _wlan_verbinden_starten(self, ssid, passwort):
+        self.wlan_laeuft = 'verbinde'
+
+        def arbeit():
+            try:
+                ok, ausgabe = wlan.verbinden(ssid, passwort)
+            except Exception as exc:
+                ok, ausgabe = False, str(exc)
+            ereignis_loggen(f"WLAN_VERBINDEN ssid={ssid} ok={ok}")
+            if ok:
+                self.wlan_meldung = (f"{self.t('wlan_erfolg')} {ssid}", True)
+            elif any(m in ausgabe.lower() for m in ('secrets', 'password', 'psk', '802-1x')):
+                self.wlan_meldung = (self.t('wlan_falsches_passwort'), False)
+            else:
+                erste_zeile = ausgabe.splitlines()[0] if ausgabe else ''
+                self.wlan_meldung = (f"{self.t('wlan_fehler')}: {erste_zeile[:70]}", False)
+            self.wlan_passwort = ''
+            self.wlan_modus = 'liste'
+            self.wlan_laeuft = None
+            self._wlan_suche_starten()
+
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def _wlan_meldung_zeichnen(self, pos):
+        if not self.wlan_meldung:
+            return
+        text, ok = self.wlan_meldung
+        farbe = (22, 130, 60) if ok else (190, 40, 40)
+        self.screen.blit(self.font_klein.render(text, True, farbe), pos)
+
+    def _signal_zeichnen(self, rechts, mitte_y, signal):
+        stufen = 1 + min(3, signal // 25)
+        for i in range(4):
+            hoehe = 8 + i * 6
+            balken = pygame.Rect(rechts - (4 - i) * 10, mitte_y + 13 - hoehe, 7, hoehe)
+            farbe = FARBE_AKZENT if i < stufen else FARBE_TOGGLE_AUS
+            pygame.draw.rect(self.screen, farbe, balken, border_radius=2)
+
+    def _schloss_zeichnen(self, center):
+        x, y = center
+        pygame.draw.arc(self.screen, FARBE_TEXT_DUNKEL_GEDAEMPFT, pygame.Rect(x - 6, y - 12, 12, 14), 0, math.pi, 2)
+        pygame.draw.rect(self.screen, FARBE_TEXT_DUNKEL_GEDAEMPFT, pygame.Rect(x - 8, y - 4, 16, 12), border_radius=2)
+
+    def wlan_zeichnen(self):
+        self.screen.fill(FARBE_SEITE)
+        if self.wlan_modus == 'passwort':
+            self._wlan_passwort_zeichnen()
+        else:
+            self._wlan_liste_zeichnen()
+        if self.wlan_laeuft == 'verbinde':
+            schleier = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+            schleier.fill((0, 0, 0, 160))
+            self.screen.blit(schleier, (0, 0))
+            hinweis = self.font_gross.render(self.t('wlan_verbinde'), True, (255, 255, 255))
+            self.screen.blit(hinweis, hinweis.get_rect(center=(self.w // 2, self.h // 2)))
+
+    def _wlan_liste_zeichnen(self):
+        self.screen.blit(self.font_gross.render(self.t('wlan_titel'), True, FARBE_TEXT_DUNKEL), (28, 20))
+        if self.wlan_aktuell:
+            status = f"{self.t('wlan_verbunden_mit')}: {self.wlan_aktuell}"
+        else:
+            status = self.t('wlan_nicht_verbunden')
+        self.screen.blit(self.font_mittel.render(status, True, FARBE_TEXT_DUNKEL), (28, 72))
+        self._wlan_meldung_zeichnen((28, 106))
+
+        self._wlan_netz_rects = []
+        y = 140
+        unten_grenze = self.h - 84
+        if self.wlan_laeuft == 'suche' and not self.wlan_netze:
+            hinweis = self.font_mittel.render(self.t('wlan_suche'), True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+            self.screen.blit(hinweis, (28, y + 10))
+        elif not self.wlan_netze:
+            hinweis = self.font_mittel.render(self.t('wlan_keine_netze'), True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+            self.screen.blit(hinweis, (28, y + 10))
+        for netz in self.wlan_netze:
+            rect = pygame.Rect(28, y, self.w - 56, 56)
+            if rect.bottom > unten_grenze:
+                break
+            self._karte(rect, aktiv=netz['ssid'] == self.wlan_aktuell)
+            name = self.font_mittel.render(netz['ssid'], True, FARBE_TEXT_DUNKEL)
+            self.screen.blit(name, (rect.x + 20, rect.centery - name.get_height() // 2))
+            self._signal_zeichnen(rect.right - 20, rect.centery, netz['signal'])
+            if netz['gesichert']:
+                self._schloss_zeichnen((rect.right - 76, rect.centery + 2))
+            self._wlan_netz_rects.append((rect, netz))
+            y += 64
+
+        unten_y = self.h - 70
+        zurueck = pygame.Rect(28, unten_y, 220, 54)
+        suchen = pygame.Rect(self.w - 248, unten_y, 220, 54)
+        self._zeile_button(zurueck, self.t('zurueck'))
+        if self.wlan_laeuft == 'suche':
+            self._zeile_button(suchen, self.t('wlan_suche'))
+        else:
+            self._zeile_button(suchen, self.t('wlan_neu_suchen'), akzent=True)
+        self._wlan_knoepfe = {'zurueck': zurueck, 'suchen': suchen}
+
+    def _wlan_passwort_zeichnen(self):
+        ssid = self.wlan_ausgewaehlt['ssid']
+        titel = self.font_gross.render(f"{self.t('wlan_passwort_fuer')} {ssid}", True, FARBE_TEXT_DUNKEL)
+        self.screen.set_clip(pygame.Rect(28, 0, self.w - 260, 70))
+        self.screen.blit(titel, (28, 20))
+        self.screen.set_clip(None)
+        abbrechen = pygame.Rect(self.w - 208, 14, 180, 50)
+        self._zeile_button(abbrechen, self.t('abbrechen'))
+
+        feld = pygame.Rect(28, 78, self.w - 56, 58)
+        self._karte(feld, aktiv=True)
+        text = self.wlan_passwort + '|'
+        t_surf = self.font_mittel.render(text, True, FARBE_TEXT_DUNKEL)
+        self.screen.set_clip(feld.inflate(-24, 0))
+        # Bei langen Passwoertern das Ende sichtbar halten
+        x = min(feld.x + 16, feld.right - 16 - t_surf.get_width())
+        self.screen.blit(t_surf, (x, feld.centery - t_surf.get_height() // 2))
+        self.screen.set_clip(None)
+        self._wlan_meldung_zeichnen((28, 142))
+
+        self._wlan_tasten = []
+        oben, gap = 168, 8
+        reihen = self.TASTATUR[self.wlan_ebene]
+        reihen_h = (self.h - 14 - oben - gap * len(reihen)) // (len(reihen) + 1)
+        breite = self.w - 56
+        for r, reihe in enumerate(reihen):
+            tasten_b = min(92, (breite - gap * (len(reihe) - 1)) // len(reihe))
+            reihen_breite = len(reihe) * tasten_b + (len(reihe) - 1) * gap
+            x = 28 + (breite - reihen_breite) // 2
+            y = oben + r * (reihen_h + gap)
+            for zeichen in reihe:
+                rect = pygame.Rect(x, y, tasten_b, reihen_h)
+                self._zeile_button(rect, zeichen)
+                self._wlan_tasten.append((rect, ('zeichen', zeichen)))
+                x += tasten_b + gap
+
+        y = oben + len(reihen) * (reihen_h + gap)
+        sonder = [
+            ('umschalt', 'abc' if self.wlan_ebene == 'gross' else 'ABC', 1.2, False),
+            ('ebene', 'abc' if self.wlan_ebene == 'zeichen' else '?123', 1.2, False),
+            ('leer', self.t('taste_leer'), 3.0, False),
+            ('loeschen', self.t('taste_loeschen'), 1.6, False),
+            ('verbinden', self.t('wlan_verbinden'), 2.0, True),
+        ]
+        gesamt_gewicht = sum(s[2] for s in sonder)
+        einheit = (breite - gap * (len(sonder) - 1)) / gesamt_gewicht
+        x = 28
+        for aktion, label, gewicht, akzent in sonder:
+            rect = pygame.Rect(int(x), y, int(einheit * gewicht), reihen_h)
+            self._zeile_button(rect, label, akzent=akzent)
+            self._wlan_tasten.append((rect, (aktion, None)))
+            x += einheit * gewicht + gap
+        self._wlan_knoepfe = {'abbrechen': abbrechen}
+
+    def wlan_event(self, ev):
+        if ev.type != pygame.MOUSEBUTTONDOWN or self.wlan_laeuft == 'verbinde':
+            return
+        pos = ev.pos
+        if self.wlan_modus == 'liste':
+            if self._wlan_knoepfe.get('zurueck') and self._wlan_knoepfe['zurueck'].collidepoint(pos):
+                self.state = 'SETTINGS'
+                self._settings_zeilen = self.settings_zeilen_aufbauen()
+                return
+            if self._wlan_knoepfe.get('suchen') and self._wlan_knoepfe['suchen'].collidepoint(pos):
+                self.wlan_meldung = None
+                self._wlan_suche_starten()
+                return
+            for rect, netz in self._wlan_netz_rects:
+                if rect.collidepoint(pos):
+                    self.wlan_ausgewaehlt = netz
+                    self.wlan_meldung = None
+                    if netz['gesichert']:
+                        self.wlan_passwort = ''
+                        self.wlan_ebene = 'klein'
+                        self.wlan_modus = 'passwort'
+                    else:
+                        self._wlan_verbinden_starten(netz['ssid'], '')
+                    return
+            return
+
+        if self._wlan_knoepfe.get('abbrechen') and self._wlan_knoepfe['abbrechen'].collidepoint(pos):
+            self.wlan_passwort = ''
+            self.wlan_meldung = None
+            self.wlan_modus = 'liste'
+            return
+        for rect, (aktion, zeichen) in self._wlan_tasten:
+            if not rect.collidepoint(pos):
+                continue
+            if aktion != 'verbinden':
+                self.wlan_meldung = None
+            if aktion == 'zeichen':
+                if len(self.wlan_passwort) < 63:
+                    self.wlan_passwort += zeichen
+            elif aktion == 'umschalt':
+                self.wlan_ebene = 'klein' if self.wlan_ebene == 'gross' else 'gross'
+            elif aktion == 'ebene':
+                self.wlan_ebene = 'klein' if self.wlan_ebene == 'zeichen' else 'zeichen'
+            elif aktion == 'leer':
+                if len(self.wlan_passwort) < 63:
+                    self.wlan_passwort += ' '
+            elif aktion == 'loeschen':
+                self.wlan_passwort = self.wlan_passwort[:-1]
+            elif aktion == 'verbinden':
+                if len(self.wlan_passwort) < 8:
+                    self.wlan_meldung = (self.t('wlan_min_zeichen'), False)
+                else:
+                    self.wlan_meldung = None
+                    self._wlan_verbinden_starten(self.wlan_ausgewaehlt['ssid'], self.wlan_passwort)
+            return
+
     # ── Hauptschleife ────────────────────────────────────────────────
 
     def run(self):
@@ -1132,6 +1350,8 @@ class App:
                         self.fotos_verwalten_event(ev)
                     elif self.state == 'BILDSCHIRM_AUS':
                         self.bildschirm_aus_event(ev)
+                    elif self.state == 'WLAN':
+                        self.wlan_event(ev)
 
                 if self.state == 'SLIDESHOW':
                     self.slideshow_update_und_zeichnen()
@@ -1142,6 +1362,8 @@ class App:
                     self.fotos_verwalten_zeichnen()
                 elif self.state == 'BILDSCHIRM_AUS':
                     self.bildschirm_aus_zeichnen()
+                elif self.state == 'WLAN':
+                    self.wlan_zeichnen()
 
                 pygame.display.flip()
             except Exception:
