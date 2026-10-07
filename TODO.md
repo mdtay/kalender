@@ -32,7 +32,10 @@ verloren gehen - vor jedem Eingriff dort zuerst sichern.
 
 - [x] `backup.sh` nutzt jetzt die SQLite-Backup-Funktion mit Integritaetspruefung.
 - [ ] Naechtliches Backup sichert keine Fotos (nur die Datenbank).
-- [ ] Logdateien wachsen unbegrenzt (`~/kiosk.log` schon 7 MB).
+- [x] Logdateien rotieren ab 1 MB. Ursache der 11 MB in kiosk.log: offene
+      ALSA-Tonausgabe ohne Ton - Kiosk nutzt jetzt einen Blindtreiber.
+- [ ] Kiosk braucht dauerhaft ~50-60 % CPU, weil 30x pro Sekunde neu gezeichnet
+      wird, auch bei stehendem Bild. Nur bei Aenderungen zeichnen -> kuehler Pi.
 - [ ] "Bildschirm aus"/Nachtmodus: `vcgencmd display_power` wirkt mit dem
       KMS-Treiber nicht, es wird nur schwarz gezeichnet.
 - [x] Haupt-Pi: `static/uploads` versehentlich in Git vorgemerkt.
