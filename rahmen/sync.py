@@ -7,7 +7,9 @@ favorisierten) Fotos raus, wenn der USB-Stick zu voll wird.
 Eigene sqlite3-Verbindung, kein Flask-Import - gleiches Muster wie
 gesichter_erkennen.py/rahmen_export.py.
 """
+import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -16,6 +18,7 @@ import tempfile
 RAHMEN_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(RAHMEN_DIR, 'rahmen.db')
 MANIFEST_PATH = os.path.join(RAHMEN_DIR, 'manifest_latest.db')
+FORTSCHRITT_PATH = os.path.join(RAHMEN_DIR, 'sync_progress.json')
 
 # Auf der echten Hardware anzupassen, sobald der USB-Stick gemountet ist
 # (siehe deploy/README.md) - siehe Plan §6.
@@ -71,6 +74,17 @@ def init_db(conn):
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_start_stunde', '22')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_ende_stunde', '7')")
     conn.commit()
+
+
+def fortschritt_schreiben(erledigt, gesamt, status='laeuft'):
+    """Schreibt den Sync-Fortschritt in eine kleine Datei, die kiosk.py
+    waehrenddessen ausliest und als Fortschrittsbalken anzeigt. Darf nie
+    selbst einen Fehler werfen - ist reine Anzeige, nicht kritisch."""
+    try:
+        with open(FORTSCHRITT_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'erledigt': erledigt, 'gesamt': gesamt, 'status': status}, f)
+    except Exception:
+        pass
 
 
 def manifest_holen():
@@ -137,9 +151,16 @@ def alte_fotos_entfernen(conn, entfernen_ids, vorhandene):
     conn.commit()
 
 
+RSYNC_FORTSCHRITT_MUSTER = re.compile(r'to-chk=(\d+)/(\d+)')
+
+
 def neue_fotos_holen(conn, neu_ids, kandidaten):
     if not neu_ids:
+        fortschritt_schreiben(0, 0, 'laeuft')
         return 0
+
+    fortschritt_schreiben(0, len(neu_ids), 'laeuft')
+
     with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as f:
         for bild_id in neu_ids:
             f.write(kandidaten[bild_id][0] + '\n')
@@ -147,10 +168,18 @@ def neue_fotos_holen(conn, neu_ids, kandidaten):
 
     try:
         quelle = f"{HAUPT_PI_USER}@{HAUPT_PI_HOST}:{HAUPT_PI_PFAD}/static/uploads/"
-        subprocess.run(
-            ['rsync', '-az', f'--files-from={liste_pfad}', quelle, FOTOS_DIR + '/'],
-            check=True
+        prozess = subprocess.Popen(
+            ['rsync', '-az', '--info=progress2', f'--files-from={liste_pfad}', quelle, FOTOS_DIR + '/'],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
+        for zeile in prozess.stdout:
+            treffer = RSYNC_FORTSCHRITT_MUSTER.search(zeile)
+            if treffer:
+                rest, gesamt_rsync = int(treffer.group(1)), int(treffer.group(2))
+                fortschritt_schreiben(max(0, gesamt_rsync - rest), gesamt_rsync, 'laeuft')
+        prozess.wait()
+        if prozess.returncode != 0:
+            raise subprocess.CalledProcessError(prozess.returncode, 'rsync')
     finally:
         os.remove(liste_pfad)
 
@@ -192,31 +221,47 @@ def speicher_aufraeumen(conn):
 
 
 def hauptlauf():
-    os.makedirs(FOTOS_DIR, exist_ok=True)
+    fortschritt_schreiben(0, 0, 'laeuft')
+    try:
+        os.makedirs(FOTOS_DIR, exist_ok=True)
 
-    manifest_holen()
+        manifest_holen()
 
-    conn = get_db()
-    manifest = sqlite3.connect(f"file:{MANIFEST_PATH}?mode=ro", uri=True)
-    manifest.row_factory = sqlite3.Row
+        conn = get_db()
+        manifest = sqlite3.connect(f"file:{MANIFEST_PATH}?mode=ro", uri=True)
+        manifest.row_factory = sqlite3.Row
 
-    personen_cache_aktualisieren(conn, manifest)
-    erlaubte_ids = erlaubte_personen_ids(conn)
-    videos_aktiv = einstellung(conn, 'videos_aktiv', '1') == '1'
+        personen_cache_aktualisieren(conn, manifest)
+        erlaubte_ids = erlaubte_personen_ids(conn)
+        videos_aktiv = einstellung(conn, 'videos_aktiv', '1') == '1'
 
-    kandidaten = kandidaten_berechnen(manifest, erlaubte_ids, videos_aktiv)
-    manifest.close()
+        kandidaten = kandidaten_berechnen(manifest, erlaubte_ids, videos_aktiv)
+        manifest.close()
 
-    neu_ids, entfernen_ids, vorhandene = fotos_abgleichen(conn, kandidaten)
-    alte_fotos_entfernen(conn, entfernen_ids, vorhandene)
-    geholt = neue_fotos_holen(conn, neu_ids, kandidaten)
-    entfernt_wegen_quota = speicher_aufraeumen(conn)
+        neu_ids, entfernen_ids, vorhandene = fotos_abgleichen(conn, kandidaten)
+        alte_fotos_entfernen(conn, entfernen_ids, vorhandene)
+        geholt = neue_fotos_holen(conn, neu_ids, kandidaten)
+        entfernt_wegen_quota = speicher_aufraeumen(conn)
 
-    conn.close()
-    print(
-        f"Sync fertig: {geholt} neu geholt, {len(entfernen_ids)} nicht mehr erlaubt entfernt, "
-        f"{entfernt_wegen_quota} wegen Speicherplatz entfernt."
-    )
+        conn.close()
+        print(
+            f"Sync fertig: {geholt} neu geholt, {len(entfernen_ids)} nicht mehr erlaubt entfernt, "
+            f"{entfernt_wegen_quota} wegen Speicherplatz entfernt."
+        )
+        fortschritt = _fortschritt_lesen_intern()
+        fortschritt_schreiben(fortschritt.get('gesamt', 0), fortschritt.get('gesamt', 0), 'fertig')
+    except Exception as exc:
+        print(f"Sync fehlgeschlagen: {exc}")
+        fortschritt_schreiben(0, 0, 'fehler')
+        raise
+
+
+def _fortschritt_lesen_intern():
+    try:
+        with open(FORTSCHRITT_PATH, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 
 if __name__ == '__main__':

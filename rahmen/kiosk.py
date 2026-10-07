@@ -7,6 +7,7 @@ Liest/schreibt direkt in rahmen.db - dieselbe Datenbank, die rahmen/sync.py
 befuellt. Kein Flask, kein HTTP, kein Chromium.
 """
 import datetime
+import json
 import math
 import os
 import random
@@ -24,6 +25,7 @@ RAHMEN_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(RAHMEN_DIR, 'rahmen.db')
 THUMBS_DIR = os.path.join(RAHMEN_DIR, 'thumbnails')
 FEHLER_LOG = os.path.join(RAHMEN_DIR, 'kiosk_fehler.log')
+SYNC_FORTSCHRITT_PATH = os.path.join(RAHMEN_DIR, 'sync_progress.json')
 IST_LINUX = sys.platform.startswith('linux')
 FOTOS_DIR = os.environ.get(
     'RAHMEN_FOTOS_DIR',
@@ -332,6 +334,13 @@ class App:
     def sync_laeuft(self):
         return bool(self._sync_prozess and self._sync_prozess.poll() is None)
 
+    def _sync_fortschritt_lesen(self):
+        try:
+            with open(SYNC_FORTSCHRITT_PATH, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return None
+
     def naechstes_foto_starten(self):
         if not self.fotos:
             self.aktuelle_surface = None
@@ -612,6 +621,24 @@ class App:
         text = self.font_mittel.render(label, True, textfarbe)
         self.screen.blit(text, text.get_rect(center=rect.center))
 
+    def _sync_fortschritt_zeichnen(self, rect):
+        fortschritt = self._sync_fortschritt_lesen() or {}
+        erledigt = fortschritt.get('erledigt', 0)
+        gesamt = fortschritt.get('gesamt', 0)
+
+        self._karte(rect)
+        if gesamt > 0:
+            anteil = max(0.0, min(1.0, erledigt / gesamt))
+            fuell_breite = int((rect.width - 6) * anteil)
+            if fuell_breite > 0:
+                fuell_rect = pygame.Rect(rect.x + 3, rect.y + 3, fuell_breite, rect.height - 6)
+                pygame.draw.rect(self.screen, FARBE_AKZENT, fuell_rect, border_radius=12)
+            text = f"{self.t('sync_laeuft_label')} ({erledigt}/{gesamt})"
+        else:
+            text = self.t('sync_laeuft_label')
+        t_surf = self.font_mittel.render(text, True, FARBE_TEXT_DUNKEL)
+        self.screen.blit(t_surf, t_surf.get_rect(center=rect.center))
+
     def _status_zeichnen(self, rect):
         try:
             usage = shutil.disk_usage(FOTOS_DIR)
@@ -701,8 +728,10 @@ class App:
                 wert = einstellung_holen(self.conn, 'nacht_ende_stunde', '7')
                 self._zeile_stepper(rect, f"{self.t('nacht_ende_label')}: {int(wert):02d}:00")
             elif art == 'button_sync':
-                label = self.t('sync_laeuft_label') if self.sync_laeuft() else self.t('sync_button_label')
-                self._zeile_button(rect, label, akzent=not self.sync_laeuft())
+                if self.sync_laeuft():
+                    self._sync_fortschritt_zeichnen(rect)
+                else:
+                    self._zeile_button(rect, self.t('sync_button_label'), akzent=True)
             elif art == 'status':
                 self._status_zeichnen(rect)
 
