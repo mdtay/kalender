@@ -52,6 +52,19 @@ def _terse_felder(zeile):
     return felder
 
 
+def status():
+    """Schnelle Abfrage ohne neuen Scan: (ssid_oder_None, internet_erreichbar)."""
+    ok, ausgabe = _nmcli(['-t', '-f', 'ACTIVE,SSID', 'dev', 'wifi', 'list', '--rescan', 'no'], timeout=10)
+    ssid = None
+    if ok:
+        for zeile in ausgabe.splitlines():
+            felder = _terse_felder(zeile)
+            if len(felder) >= 2 and felder[0] == 'yes' and felder[1]:
+                ssid = felder[1]
+    ok, verbindung = _nmcli(['networking', 'connectivity'], timeout=10)
+    return ssid, ok and verbindung.strip() == 'full'
+
+
 def netzwerke_suchen():
     """Liefert (aktuelle_ssid_oder_None, [{'ssid', 'signal', 'gesichert'}, ...])
     nach Signalstaerke sortiert, oder wirft RuntimeError mit nmcli-Meldung."""

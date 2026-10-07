@@ -284,6 +284,9 @@ class App:
         self._wlan_knoepfe = {}
         self._wlan_netz_rects = []
         self._wlan_tasten = []
+        self.wlan_status = None
+        self._wlan_status_zeit = None
+        self._wlan_status_laeuft = False
 
     def t(self, schluessel):
         return t(schluessel, self.sprache)
@@ -774,7 +777,8 @@ class App:
                 wert = einstellung_holen(self.conn, 'nacht_ende_stunde', '7')
                 self._zeile_stepper(rect, f"{self.t('nacht_ende_label')}: {int(wert):02d}:00")
             elif art == 'button_wlan':
-                self._zeile_button(rect, self.t('wlan_button_label'))
+                self._wlan_status_aktualisieren()
+                self._wlan_zeile_zeichnen(rect)
             elif art == 'button_sync':
                 if self.sync_laeuft():
                     self._sync_fortschritt_zeichnen(rect)
@@ -1093,10 +1097,66 @@ class App:
         'zeichen': ['!@#$%&*()=', '-_+/\\:;\'"?', '.,<>[]{}~|^', 'çğıöşüäßÇĞİÖŞÜÄ'],
     }
 
+    def _wlan_status_aktualisieren(self, sofort=False):
+        jetzt = pygame.time.get_ticks()
+        if self._wlan_status_laeuft:
+            return
+        if not sofort and self._wlan_status_zeit is not None and jetzt - self._wlan_status_zeit < 10000:
+            return
+        self._wlan_status_zeit = jetzt
+        self._wlan_status_laeuft = True
+
+        def arbeit():
+            try:
+                self.wlan_status = wlan.status()
+            except Exception:
+                self.wlan_status = (None, False)
+            finally:
+                self._wlan_status_laeuft = False
+
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def _wlan_status_info(self):
+        """(farbe, text): gruen = verbunden mit Internet, orange = WLAN ohne
+        Internet, grau = nicht verbunden. None solange noch unbekannt."""
+        if self.wlan_status is None:
+            return None
+        ssid, internet = self.wlan_status
+        if ssid and internet:
+            return (34, 160, 80), ssid
+        if ssid:
+            return (230, 140, 20), f"{ssid} ({self.t('wlan_kein_internet')})"
+        return (150, 150, 158), self.t('wlan_nicht_verbunden')
+
+    @staticmethod
+    def _text_kuerzen(font, text, max_breite):
+        if font.size(text)[0] <= max_breite:
+            return text
+        while text and font.size(text + '…')[0] > max_breite:
+            text = text[:-1]
+        return text + '…'
+
+    def _wlan_status_zeichnen(self, rechts, mitte_y, font):
+        info = self._wlan_status_info()
+        if not info:
+            return
+        farbe, text = info
+        t_surf = font.render(self._text_kuerzen(font, text, 380), True, FARBE_TEXT_DUNKEL)
+        t_rect = t_surf.get_rect(midright=(rechts, mitte_y))
+        self.screen.blit(t_surf, t_rect)
+        pygame.draw.circle(self.screen, farbe, (t_rect.left - 16, mitte_y), 8)
+
+    def _wlan_zeile_zeichnen(self, rect):
+        self._karte(rect)
+        label = self.font_mittel.render(self.t('wlan_button_label'), True, FARBE_TEXT_DUNKEL)
+        self.screen.blit(label, (rect.x + 20, rect.centery - label.get_height() // 2))
+        self._wlan_status_zeichnen(rect.right - 20, rect.centery, self.font_klein)
+
     def wlan_oeffnen(self):
         self.state = 'WLAN'
         self.wlan_modus = 'liste'
         self.wlan_meldung = None
+        self._wlan_status_aktualisieren(sofort=True)
         self._wlan_suche_starten()
 
     def _wlan_suche_starten(self):
@@ -1134,6 +1194,7 @@ class App:
             self.wlan_passwort = ''
             self.wlan_modus = 'liste'
             self.wlan_laeuft = None
+            self._wlan_status_aktualisieren(sofort=True)
             self._wlan_suche_starten()
 
         threading.Thread(target=arbeit, daemon=True).start()
@@ -1173,11 +1234,15 @@ class App:
 
     def _wlan_liste_zeichnen(self):
         self.screen.blit(self.font_gross.render(self.t('wlan_titel'), True, FARBE_TEXT_DUNKEL), (28, 20))
-        if self.wlan_aktuell:
-            status = f"{self.t('wlan_verbunden_mit')}: {self.wlan_aktuell}"
-        else:
-            status = self.t('wlan_nicht_verbunden')
-        self.screen.blit(self.font_mittel.render(status, True, FARBE_TEXT_DUNKEL), (28, 72))
+        self._wlan_status_aktualisieren()
+        info = self._wlan_status_info()
+        if info:
+            farbe, text = info
+            if self.wlan_status[0]:
+                text = f"{self.t('wlan_verbunden_mit')}: {text}"
+            t_surf = self.font_mittel.render(self._text_kuerzen(self.font_mittel, text, self.w - 90), True, FARBE_TEXT_DUNKEL)
+            pygame.draw.circle(self.screen, farbe, (38, 72 + t_surf.get_height() // 2), 9)
+            self.screen.blit(t_surf, (56, 72))
         self._wlan_meldung_zeichnen((28, 106))
 
         self._wlan_netz_rects = []
