@@ -6,14 +6,13 @@ verloren gehen - vor jedem Eingriff dort zuerst sichern.
 
 ## Kritisch
 
-- [ ] **Kalender-Migration laeuft unter gunicorn nie** - nach dem naechsten
-      Neustart des Haupt-Pi brechen Tagesansicht, Ereignis-Seite und Galerie
-      mit `no such column: quelle` ab. `init_db()` muss beim Start laufen.
-- [ ] **Rahmen-Sync-Timer nicht installiert** - der Rahmen-Pi synchronisiert
-      nachts nicht, nur per Knopf.
-- [ ] **19 Fotos fehlen auf dem Rahmen-Stick** - am 28.09. vor dem Einbinden
-      des Sticks synchronisiert. Sync soll fehlende Dateien selbst nachholen
-      und nur laufen, wenn der Stick eingebunden ist.
+- [x] **Kalender-Migration laeuft unter gunicorn nie** - `init_db()` laeuft
+      jetzt beim Start. Am 07.10. auf dem Haupt-Pi eingespielt (Sicherung
+      vorher: `~/kalender_sicherungen/` und lokal `Kalender_Sicherungen/`).
+- [x] **Rahmen-Sync-Timer nicht installiert** - am 07.10. auf dem Rahmen-Pi
+      installiert (taeglich 03:30, wartet auf Netzwerk und Stick).
+- [x] **19 Fotos fehlen auf dem Rahmen-Stick** - Sync holt fehlende Dateien
+      jetzt selbst nach und laeuft nur mit eingebundenem Stick. Alle 19 wieder da.
 
 ## Mittel
 
