@@ -16,8 +16,9 @@ verloren gehen - vor jedem Eingriff dort zuerst sichern.
 
 ## Mittel
 
-- [ ] Geaenderte Fotos (gedreht) und geaenderte Daten kommen nie beim Rahmen an.
-- [ ] Gleichzeitige Syncs (Knopf + Timer) koennen kollidieren - Sperre einbauen.
+- [x] Geaenderte Fotos (gedreht) und geaenderte Daten kommen nie beim Rahmen an.
+      Export schreibt Aenderungszeit mit, Sync holt geaenderte Dateien neu.
+- [x] Gleichzeitige Syncs (Knopf + Timer) koennen kollidieren - Dateisperre.
 - [ ] Gesichtserkennung auf dem Haupt-Pi nie aktiv. Vor dem Einschalten
       klaeren: sollen unbestaetigte Auto-Treffer den Rahmen-Filter beeinflussen?
 - [ ] "Backup herunterladen" baut das ganze Zip im Arbeitsspeicher.
