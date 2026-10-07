@@ -138,7 +138,13 @@ def fotos_abgleichen(conn, kandidaten):
     vorhandene = {
         r['quelle_bild_id']: r for r in conn.execute("SELECT * FROM fotos").fetchall()
     }
-    neu_ids = set(kandidaten) - set(vorhandene)
+    # Bekannte Fotos, deren Datei fehlt, ebenfalls neu holen - sonst bleiben
+    # sie fuer immer verschwunden (z.B. vor dem Einbinden des Sticks geholt).
+    dateien_fehlen = {
+        bild_id for bild_id in set(vorhandene) & set(kandidaten)
+        if not os.path.exists(os.path.join(FOTOS_DIR, vorhandene[bild_id]['lokaler_dateiname']))
+    }
+    neu_ids = (set(kandidaten) - set(vorhandene)) | dateien_fehlen
     entfernen_ids = set(vorhandene) - set(kandidaten)
     return neu_ids, entfernen_ids, vorhandene
 
@@ -180,7 +186,10 @@ def neue_fotos_holen(conn, neu_ids, kandidaten):
                 rest, gesamt_rsync = int(treffer.group(1)), int(treffer.group(2))
                 fortschritt_schreiben(max(0, gesamt_rsync - rest), gesamt_rsync, 'laeuft')
         prozess.wait()
-        if prozess.returncode != 0:
+        # 23/24 = einzelne Dateien fehlten auf dem Haupt-Pi. Die werden unten
+        # uebersprungen; der Rest soll trotzdem ankommen statt dass jeder Sync
+        # an einer einzigen fehlenden Datei scheitert.
+        if prozess.returncode not in (0, 23, 24):
             raise subprocess.CalledProcessError(prozess.returncode, 'rsync')
     finally:
         os.remove(liste_pfad)
@@ -190,9 +199,13 @@ def neue_fotos_holen(conn, neu_ids, kandidaten):
         dateiname, datum, ist_video = kandidaten[bild_id]
         if not os.path.exists(os.path.join(FOTOS_DIR, dateiname)):
             continue  # rsync konnte die Datei nicht holen (z.B. zwischenzeitlich geloescht)
+        # Upsert, weil auch bekannte Fotos mit fehlender Datei hier landen -
+        # deren Favorit-Markierung bleibt dabei erhalten.
         conn.execute(
             "INSERT INTO fotos (quelle_bild_id, lokaler_dateiname, datum, ist_video, favorit) "
-            "VALUES (?, ?, ?, ?, 0)",
+            "VALUES (?, ?, ?, ?, 0) "
+            "ON CONFLICT(quelle_bild_id) DO UPDATE SET "
+            "lokaler_dateiname=excluded.lokaler_dateiname, datum=excluded.datum, ist_video=excluded.ist_video",
             (bild_id, dateiname, datum, ist_video)
         )
         geholt += 1
@@ -249,9 +262,19 @@ def vorschaubilder_aktualisieren(conn):
     return erzeugt
 
 
+def stick_pruefen():
+    """Bricht ab, wenn der USB-Stick nicht eingebunden ist. Sonst landen die
+    Fotos unbemerkt im leeren Mount-Verzeichnis auf der SD-Karte und sind
+    nach dem Einbinden des Sticks verdeckt (so gingen am 28.09. 19 Fotos
+    'verloren'). Nur fuer Pfade unter /mnt, lokale Testordner sind ok."""
+    if FOTOS_DIR.startswith('/mnt/') and not os.path.ismount(FOTOS_DIR):
+        raise RuntimeError(f"USB-Stick nicht eingebunden ({FOTOS_DIR}) - Sync abgebrochen.")
+
+
 def hauptlauf():
     fortschritt_schreiben(0, 0, 'laeuft')
     try:
+        stick_pruefen()
         os.makedirs(FOTOS_DIR, exist_ok=True)
 
         manifest_holen()
