@@ -21,9 +21,11 @@ verloren gehen - vor jedem Eingriff dort zuerst sichern.
 - [x] Gleichzeitige Syncs (Knopf + Timer) koennen kollidieren - Dateisperre.
 - [x] Gesichtserkennung aktiv - nur als Vorschlag: startet nach jedem Upload,
       nur fuer Fotos ohne Personen, wird erst beim Speichern zur Markierung.
-- [ ] Gesichtserkennung verbessern: Profilfotos fuer alle Personen hinterlegen
-      (aktuell nur Alvar, Yuna) und genaueren DNN-Detektor nachruesten
-      (models/face_detector/README.md). Probelauf: ca. 60 % Trefferquote.
+- [x] Gesichtserkennung lernt aus markierten Fotos (genau 1 Person + 1 Gesicht),
+      Vorschlaege nur hervorgehoben statt angehakt. Probe: 79 % (Raten: 53 %).
+- [ ] Gesichtserkennung beobachten: app.log zeigt "Gesichtsvorschlaege ... uebernommen/
+      verworfen". Weiter verbessern: Profilfotos fuer alle Personen (aktuell nur
+      Alvar, Yuna), genauerer DNN-Detektor (models/face_detector/README.md).
 - [x] "Backup herunterladen" baut das Zip jetzt auf der Platte (getestet: 603 MB).
 
 ## Klein
