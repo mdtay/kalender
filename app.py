@@ -11,7 +11,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime, date
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, send_file, session, flash
+from flask import Flask, Response, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -1253,16 +1253,27 @@ def zip_herunterladen(dateien, download_name):
     with zipfile.ZipFile(zip_pfad, 'w', zipfile.ZIP_STORED, allowZip64=True) as zf:
         for pfad, name in dateien:
             zf.write(pfad, name)
-    antwort = send_file(zip_pfad, mimetype='application/zip', as_attachment=True,
-                        download_name=download_name)
-
-    def aufraeumen():
+    # Selbst streamen statt send_file: gunicorn reicht send_file-Antworten
+    # direkt durch, call_on_close laeuft dann nie und die Datei bliebe liegen.
+    # Das finally des Generators laeuft dagegen immer, auch bei Abbruch.
+    def senden():
         try:
-            os.remove(zip_pfad)
-        except OSError:
-            pass
-    antwort.call_on_close(aufraeumen)
-    return antwort
+            with open(zip_pfad, 'rb') as f:
+                while True:
+                    teil = f.read(1 << 20)
+                    if not teil:
+                        break
+                    yield teil
+        finally:
+            try:
+                os.remove(zip_pfad)
+            except OSError:
+                pass
+
+    return Response(senden(), mimetype='application/zip', headers={
+        'Content-Disposition': f'attachment; filename="{download_name}"',
+        'Content-Length': str(os.path.getsize(zip_pfad)),
+    })
 
 
 @app.route('/export')
