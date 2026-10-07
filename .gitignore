@@ -16,3 +16,5 @@ rahmen/kiosk_fehler.log
 rahmen/sync_progress.json
 rahmen/kiosk_ereignisse.log
 rahmen/sync.lock
+models/gesichter_modell.yml
+models/gesichter_modell.json

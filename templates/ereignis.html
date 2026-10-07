@@ -177,10 +177,10 @@
                         {% for p in fav %}
                         <label class="personen-chip{% if bild_personen.get(bild.id, {}).get(p.id) == 'auto' %} personen-chip-auto{% endif %}" title="{{ p.name }}">
                             <input type="checkbox" name="personen" value="{{ p.id }}"
-                                {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
+                                {% if bild_personen.get(bild.id, {}).get(p.id) not in (none, 'auto') %}checked{% endif %}>
                             <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
                             {{ p.name }}
-                            {% if bild_personen.get(bild.id, {}).get(p.id) == 'auto' %}<span class="personen-chip-auto-badge" title="Automatisch erkannt – bitte bestätigen">?</span>{% endif %}
+                            {% if bild_personen.get(bild.id, {}).get(p.id) == 'auto' %}<span class="personen-chip-auto-badge" title="Vorschlag der Gesichtserkennung – zum Übernehmen antippen">?</span>{% endif %}
                         </label>
                         {% endfor %}
                     </div>
@@ -193,10 +193,10 @@
                             {% for p in rest %}
                             <label class="personen-chip{% if bild_personen.get(bild.id, {}).get(p.id) == 'auto' %} personen-chip-auto{% endif %}" title="{{ p.name }}">
                                 <input type="checkbox" name="personen" value="{{ p.id }}"
-                                    {% if p.id in bild_personen.get(bild.id, []) %}checked{% endif %}>
+                                    {% if bild_personen.get(bild.id, {}).get(p.id) not in (none, 'auto') %}checked{% endif %}>
                                 <span class="person-avatar-sm">{% if p.avatar %}<img src="{{ url_for('static', filename='uploads/' + p.avatar) }}" alt="">{% else %}{{ p.name[0].upper() }}{% endif %}</span>
                                 {{ p.name }}
-                                {% if bild_personen.get(bild.id, {}).get(p.id) == 'auto' %}<span class="personen-chip-auto-badge" title="Automatisch erkannt – bitte bestätigen">?</span>{% endif %}
+                                {% if bild_personen.get(bild.id, {}).get(p.id) == 'auto' %}<span class="personen-chip-auto-badge" title="Vorschlag der Gesichtserkennung – zum Übernehmen antippen">?</span>{% endif %}
                             </label>
                             {% endfor %}
                         </div>

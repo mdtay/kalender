@@ -361,9 +361,16 @@ textarea { resize: vertical; }
 .personen-checkboxen-mini .personen-chip:has(input:checked)::after {
     display: none;
 }
-.personen-chip-auto {
+/* Vorschlag der Gesichtserkennung: auffaellig, aber nicht angehakt -
+   erst ein Tippen uebernimmt ihn */
+.personen-chip-auto,
+.personen-checkboxen-mini .personen-chip-auto {
     border-style: dashed;
-    opacity: 0.85;
+    border-color: var(--accent);
+}
+.personen-chip-auto:not(:has(input:checked)),
+.personen-checkboxen-mini .personen-chip-auto:not(:has(input:checked)) {
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface2));
 }
 .personen-chip-auto-badge {
     font-size: 0.65em;

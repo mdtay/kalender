@@ -789,7 +789,18 @@ def bild_meta(bild_id):
         p = conn.execute("SELECT id FROM personen WHERE name=?", (name,)).fetchone()
         conn.execute("INSERT OR IGNORE INTO bild_personen (bild_id, person_id) VALUES (?,?)", (bild_id, p['id']))
 
-    # Gespeichert = vom Nutzer entschieden; abgewaehlte Vorschlaege sollen nicht wiederkommen.
+    # Gespeichert = vom Nutzer entschieden; abgewaehlte Vorschlaege sollen nicht
+    # wiederkommen. Vorher festhalten, wie gut die Vorschlaege waren - daran
+    # laesst sich spaeter ablesen, ob die Erkennung brauchbar geworden ist.
+    vorgeschlagen = {r['person_id'] for r in conn.execute(
+        "SELECT person_id FROM gesicht_vorschlaege WHERE bild_id=?", (bild_id,))}
+    if vorgeschlagen:
+        gespeichert = {r['person_id'] for r in conn.execute(
+            "SELECT person_id FROM bild_personen WHERE bild_id=?", (bild_id,))}
+        app.logger.info(
+            f"Gesichtsvorschlaege Bild {bild_id}: {len(vorgeschlagen & gespeichert)} uebernommen, "
+            f"{len(vorgeschlagen - gespeichert)} verworfen, {len(gespeichert - vorgeschlagen)} selbst ergaenzt"
+        )
     conn.execute("DELETE FROM gesicht_vorschlaege WHERE bild_id=?", (bild_id,))
 
     row = conn.execute("SELECT ereignis_id FROM bilder WHERE id=?", (bild_id,)).fetchone()

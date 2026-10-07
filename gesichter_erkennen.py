@@ -12,6 +12,7 @@ gespeicherten Personen werden gar nicht angefasst.
 
 Eigene DB-Verbindung wie migrieren.py — kein Import von app.py nötig/gewollt.
 """
+import json
 import os
 import sqlite3
 
@@ -22,6 +23,8 @@ DB_PATH = os.path.join(os.path.dirname(__file__), 'kalender.db')
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
 MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models', 'face_detector')
 SPERR_PATH = os.path.join(os.path.dirname(__file__), 'gesichter.lock')
+MODELL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'gesichter_modell.yml')
+SIGNATUR_PATH = os.path.join(os.path.dirname(__file__), 'models', 'gesichter_modell.json')
 
 VIDEO_EXTENSIONS = {'mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v'}
 
@@ -86,22 +89,85 @@ def groesste_box(boxen):
     return max(boxen, key=lambda b: b[2] * b[3])
 
 
-def trainingsdaten_aufbauen(conn, detect_faces):
+def _datei_zeit(dateiname):
+    try:
+        return int(os.path.getmtime(os.path.join(UPLOAD_FOLDER, dateiname)))
+    except OSError:
+        return None
+
+
+def lernquellen(conn):
+    """Alles, woraus gelernt wird: Profilfotos und Fotos mit genau einer
+    gespeicherten Person. Dient auch als Signatur - aendert sie sich nicht,
+    muss das Modell nicht neu berechnet werden."""
+    avatare = [(p['id'], p['avatar'], _datei_zeit(p['avatar'])) for p in conn.execute(
+        "SELECT id, avatar FROM personen WHERE avatar IS NOT NULL ORDER BY id")]
+    einzelfotos = [(r['bild_id'], r['person_id'], r['dateiname'], _datei_zeit(r['dateiname'])) for r in conn.execute(
+        "SELECT bp.bild_id, MIN(bp.person_id) AS person_id, b.dateiname FROM bild_personen bp "
+        "JOIN bilder b ON b.id = bp.bild_id GROUP BY bp.bild_id HAVING COUNT(*) = 1 ORDER BY bp.bild_id")]
+    einzelfotos = [e for e in einzelfotos if not ist_video(e[2])]
+    return avatare, einzelfotos
+
+
+def trainingsdaten_aufbauen(conn, detect_faces, quellen=None):
+    """Lernt aus Profilfotos und aus deinen markierten Fotos - aber nur aus
+    solchen mit genau EINER gespeicherten Person und genau EINEM gefundenen
+    Gesicht, damit kein unmarkiertes Gesicht im Hintergrund falsch gelernt
+    wird. Die markierten Fotos werden dabei nur gelesen."""
+    avatare, einzelfotos = quellen or lernquellen(conn)
+    namen = {r['id']: r['name'] for r in conn.execute("SELECT id, name FROM personen")}
     bilder, labels = [], []
-    personen = conn.execute("SELECT id, name, avatar FROM personen WHERE avatar IS NOT NULL").fetchall()
-    for p in personen:
-        pfad = os.path.join(UPLOAD_FOLDER, p['avatar'])
-        avatar = cv2.imread(pfad)
+    for pid, avatar_datei, _ in avatare:
+        avatar = cv2.imread(os.path.join(UPLOAD_FOLDER, avatar_datei))
         if avatar is None:
-            print(f"  Warnung: Avatar von '{p['name']}' konnte nicht gelesen werden ({p['avatar']}).")
+            print(f"  Warnung: Avatar von '{namen.get(pid)}' konnte nicht gelesen werden ({avatar_datei}).")
             continue
         boxen = detect_faces(avatar)
         if not boxen:
-            print(f"  Warnung: Kein Gesicht im Avatar von '{p['name']}' erkannt — wird nicht trainiert.")
+            print(f"  Warnung: Kein Gesicht im Avatar von '{namen.get(pid)}' erkannt — wird nicht trainiert.")
             continue
         bilder.append(gesicht_zuschneiden(avatar, groesste_box(boxen)))
-        labels.append(p['id'])
+        labels.append(pid)
+    aus_fotos = 0
+    for _, pid, dateiname, _ in einzelfotos:
+        bild = cv2.imread(os.path.join(UPLOAD_FOLDER, dateiname))
+        if bild is None:
+            continue
+        boxen = detect_faces(bild)
+        if len(boxen) == 1:
+            bilder.append(gesicht_zuschneiden(bild, boxen[0]))
+            labels.append(pid)
+            aus_fotos += 1
+    print(f"  Lernmaterial: {len(bilder) - aus_fotos} Profilfoto(s) + {aus_fotos} markierte Einzelfoto(s)")
     return bilder, labels
+
+
+def modell_laden_oder_trainieren(conn, detect_faces):
+    """Gespeichertes Modell wiederverwenden, solange sich das Lernmaterial nicht
+    geaendert hat - neu lernen kostet auf dem Pi pro Foto eine Gesichtssuche."""
+    quellen = lernquellen(conn)
+    signatur = json.dumps(quellen)
+    try:
+        with open(SIGNATUR_PATH, encoding='utf-8') as f:
+            gespeichert = f.read()
+        if gespeichert == signatur and os.path.exists(MODELL_PATH):
+            recognizer = cv2.face.LBPHFaceRecognizer_create()
+            recognizer.read(MODELL_PATH)
+            print("Gespeichertes Modell verwendet (Lernmaterial unveraendert).")
+            return recognizer
+    except OSError:
+        pass
+
+    bilder, labels = trainingsdaten_aufbauen(conn, detect_faces, quellen)
+    if not bilder:
+        return None
+    recognizer = cv2.face.LBPHFaceRecognizer_create()
+    recognizer.train(bilder, np.array(labels))
+    print(f"LBPH-Modell neu gelernt mit {len(bilder)} Gesicht(ern) von {len(set(labels))} Person(en).")
+    recognizer.write(MODELL_PATH)
+    with open(SIGNATUR_PATH, 'w', encoding='utf-8') as f:
+        f.write(signatur)
+    return recognizer
 
 
 def bereits_markierte_ueberspringen(conn):
@@ -133,16 +199,11 @@ def hauptlauf():
 
     detect_faces = lade_detektor()
 
-    trainingsbilder, labels = trainingsdaten_aufbauen(conn, detect_faces)
-    if not trainingsbilder:
+    recognizer = modell_laden_oder_trainieren(conn, detect_faces)
+    if recognizer is None:
         print("Keine Trainingsdaten – überspringe diesen Durchlauf.")
         conn.close()
         return
-
-    recognizer = cv2.face.LBPHFaceRecognizer_create()
-    recognizer.train(trainingsbilder, np.array(labels))
-    print(f"LBPH-Modell trainiert mit {len(trainingsbilder)} Gesicht(ern) von "
-          f"{len(set(labels))} Person(en).")
 
     verarbeitet = uebersprungen = fehler = vorschlaege = 0
 
