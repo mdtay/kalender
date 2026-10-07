@@ -116,6 +116,7 @@ def init_db():
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_aktiv', '0')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_start_stunde', '22')")
     conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('nacht_ende_stunde', '7')")
+    conn.execute("INSERT OR IGNORE INTO einstellungen VALUES ('reihenfolge', 'zufall')")
     conn.commit()
     conn.close()
 
@@ -391,8 +392,20 @@ class App:
     def fotos_neu_laden(self):
         self.fotos = fotos_laden(self.conn)
         self.fotos_mischen()
+        if einstellung_holen(self.conn, 'reihenfolge', 'zufall') == 'chronologisch' and self.zuletzt_gezeigt:
+            # Beim stuendlichen Neuladen nicht wieder beim aeltesten Foto
+            # anfangen, sondern hinter dem zuletzt gezeigten weitermachen.
+            letzte_id = self.zuletzt_gezeigt[-1]
+            for i, foto in enumerate(self.fotos):
+                if foto['id'] == letzte_id:
+                    self.foto_index = i + 1
+                    break
 
     def fotos_mischen(self):
+        if einstellung_holen(self.conn, 'reihenfolge', 'zufall') == 'chronologisch':
+            self.fotos.sort(key=lambda f: (f['datum'], f['id']))
+            self.foto_index = 0
+            return
         # Nur die juengere Haelfte zaehlt als "kuerzlich", sonst landet bei
         # wenigen Fotos alles im Kuerzlich-Block und das Mischen verpufft.
         fenster = len(self.fotos) // 2
@@ -633,6 +646,7 @@ class App:
         y += 28
 
         zeilen.append(('datum_toggle', None, y)); y += row_h + gap
+        zeilen.append(('reihenfolge', None, y)); y += row_h + gap
         zeilen.append(('dauer_stepper', None, y)); y += row_h + gap
         zeilen.append(('uebergang_dauer', None, y)); y += row_h + gap
         zeilen.append(('uebergang_typ', None, y)); y += row_h + gap
@@ -799,6 +813,9 @@ class App:
             elif art == 'uebergang_dauer':
                 wert = einstellung_holen(self.conn, 'uebergang_dauer_ms', '800')
                 self._zeile_stepper(rect, f"{self.t('uebergang_dauer_label')}: {wert}ms")
+            elif art == 'reihenfolge':
+                wert = einstellung_holen(self.conn, 'reihenfolge', 'zufall')
+                self._zeile_button(rect, f"{self.t('reihenfolge_label')}: {self.t('reihenfolge_' + wert)}")
             elif art == 'sprache':
                 spr = einstellung_holen(self.conn, 'sprache', 'de')
                 self._zeile_button(rect, f"{self.t('sprache_label')}: {'Deutsch' if spr == 'de' else 'Türkçe'}")
@@ -890,6 +907,9 @@ class App:
                 einstellung_setzen(self.conn, 'uebergang_typ', UEBERGANG_TYPEN[idx])
             elif art == 'uebergang_dauer':
                 self._stepper_tap(x, rect, 'uebergang_dauer_ms', 200, 5000, 100)
+            elif art == 'reihenfolge':
+                aktuell = einstellung_holen(self.conn, 'reihenfolge', 'zufall')
+                einstellung_setzen(self.conn, 'reihenfolge', 'chronologisch' if aktuell == 'zufall' else 'zufall')
             elif art == 'sprache':
                 aktuell = einstellung_holen(self.conn, 'sprache', 'de')
                 neu = 'tr' if aktuell == 'de' else 'de'
