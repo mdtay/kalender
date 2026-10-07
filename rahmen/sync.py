@@ -19,6 +19,7 @@ RAHMEN_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(RAHMEN_DIR, 'rahmen.db')
 MANIFEST_PATH = os.path.join(RAHMEN_DIR, 'manifest_latest.db')
 FORTSCHRITT_PATH = os.path.join(RAHMEN_DIR, 'sync_progress.json')
+THUMBS_DIR = os.path.join(RAHMEN_DIR, 'thumbnails')
 
 # Auf der echten Hardware anzupassen, sobald der USB-Stick gemountet ist
 # (siehe deploy/README.md) - siehe Plan §6.
@@ -220,6 +221,33 @@ def speicher_aufraeumen(conn):
     return entfernt
 
 
+def vorschaubilder_aktualisieren(conn):
+    """Erzeugt fehlende Vorschaubilder fuer "Fotos verwalten" und loescht
+    verwaiste. Laeuft hier im Sync statt in kiosk.py, damit die Oberflaeche
+    auf dem Pi 3 nie selbst grosse JPEGs dekodieren muss. Gleiches Format
+    wie kiosk.py thumbnail_laden() (gleicher Dateiname, 320px, JPEG)."""
+    from PIL import Image
+
+    os.makedirs(THUMBS_DIR, exist_ok=True)
+    gewuenscht = {r['lokaler_dateiname'] for r in conn.execute("SELECT lokaler_dateiname FROM fotos WHERE ist_video=0")}
+    vorhanden = set(os.listdir(THUMBS_DIR))
+
+    for dateiname in vorhanden - gewuenscht:
+        os.remove(os.path.join(THUMBS_DIR, dateiname))
+
+    erzeugt = 0
+    for dateiname in gewuenscht - vorhanden:
+        try:
+            bild = Image.open(os.path.join(FOTOS_DIR, dateiname))
+            bild.draft('RGB', (320, 320))
+            bild.thumbnail((320, 320))
+            bild.convert('RGB').save(os.path.join(THUMBS_DIR, dateiname), 'JPEG', quality=85)
+            erzeugt += 1
+        except Exception as exc:
+            print(f"Vorschaubild fuer {dateiname} fehlgeschlagen: {exc}")
+    return erzeugt
+
+
 def hauptlauf():
     fortschritt_schreiben(0, 0, 'laeuft')
     try:
@@ -240,6 +268,7 @@ def hauptlauf():
         alte_fotos_entfernen(conn, entfernen_ids, vorhandene)
         geholt = neue_fotos_holen(conn, neu_ids, kandidaten)
         entfernt_wegen_quota = speicher_aufraeumen(conn)
+        vorschaubilder = vorschaubilder_aktualisieren(conn)
 
         conn.execute(
             "INSERT OR REPLACE INTO einstellungen VALUES ('letzter_sync_lauf', datetime('now'))"
@@ -248,7 +277,7 @@ def hauptlauf():
         conn.close()
         print(
             f"Sync fertig: {geholt} neu geholt, {len(entfernen_ids)} nicht mehr erlaubt entfernt, "
-            f"{entfernt_wegen_quota} wegen Speicherplatz entfernt."
+            f"{entfernt_wegen_quota} wegen Speicherplatz entfernt, {vorschaubilder} Vorschaubilder erzeugt."
         )
         fortschritt = _fortschritt_lesen_intern()
         fortschritt_schreiben(fortschritt.get('gesamt', 0), fortschritt.get('gesamt', 0), 'fertig')
