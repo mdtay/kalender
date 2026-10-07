@@ -306,7 +306,10 @@ def gesichtserkennung_anstossen():
     alle offenen Bilder ab."""
     skript = os.path.join(os.path.dirname(__file__), 'gesichter_erkennen.py')
     try:
-        with open(os.path.join(_log_dir, 'gesichter.log'), 'a') as log:
+        log_pfad = os.path.join(_log_dir, 'gesichter.log')
+        if os.path.exists(log_pfad) and os.path.getsize(log_pfad) > 1_000_000:
+            os.replace(log_pfad, log_pfad + '.1')
+        with open(log_pfad, 'a') as log:
             subprocess.Popen([sys.executable, skript], stdout=log, stderr=subprocess.STDOUT,
                              start_new_session=True)
     except Exception as exc:

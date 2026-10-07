@@ -106,6 +106,10 @@ cat > ~/.xinitrc << 'EOF'
 #!/bin/bash
 xset s off; xset -dpms; xset s noblank
 while true; do
+  # ab 1 MB nach kiosk.log.1 rotieren, damit die SD-Karte nicht volllaeuft
+  if [ -f /home/tay/kiosk.log ] && [ "$(stat -c%s /home/tay/kiosk.log)" -gt 1000000 ]; then
+    mv /home/tay/kiosk.log /home/tay/kiosk.log.1
+  fi
   /home/tay/kalender/venv/bin/python /home/tay/kalender/rahmen/kiosk.py >> /home/tay/kiosk.log 2>&1
   echo "$(date '+%Y-%m-%d %H:%M:%S'): kiosk.py beendet (Exit $?) - Neustart in 3s" >> /home/tay/kiosk.log
   sleep 3

@@ -7,6 +7,7 @@ ist kein Teil der eigentlichen Bilderrahmen-App.
 """
 import datetime
 import glob
+import os
 import re
 import subprocess
 
@@ -58,6 +59,9 @@ def hauptlauf():
         f"{jetzt} {throttled} {temp} eingabegeraete={anzahl} "
         f"hdmi={hdmi} {display_power} kiosk_laeuft={kiosk}\n"
     )
+    # Ab 1 MB nach .1 rotieren - laeuft alle 30s, sonst ~150 MB pro Jahr
+    if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 1_000_000:
+        os.replace(LOG_PATH, LOG_PATH + '.1')
     with open(LOG_PATH, 'a', encoding='utf-8') as f:
         f.write(zeile)
 

@@ -20,6 +20,11 @@ import time
 import traceback
 from collections import deque
 
+# Der Rahmen spielt nie Ton ab. Ohne das oeffnet pygame.init() trotzdem die
+# ALSA-Tonausgabe, die dann im Dauerlauf "underrun" meldet (Megabytes pro
+# Stunde in kiosk.log) und unnoetig CPU kostet.
+os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
+
 import pygame
 
 import wlan
@@ -41,22 +46,29 @@ FOTOS_DIR = os.environ.get(
 )
 
 
-def fehler_loggen(kontext):
-    """Schreibt Zeitstempel + Traceback nach kiosk_fehler.log, wirft nie selbst."""
+LOG_MAX_BYTES = 1_000_000
+
+
+def log_anhaengen(pfad, text):
+    """Haengt an ein Log an; ab 1 MB wird es zu .1 (die vorige .1 entfaellt),
+    damit die SD-Karte auf Dauer nicht volllaeuft. Wirft nie selbst."""
     try:
-        with open(FEHLER_LOG, 'a', encoding='utf-8') as f:
-            f.write(f"\n[{datetime.datetime.now().isoformat(timespec='seconds')}] {kontext}\n")
-            f.write(traceback.format_exc())
+        if os.path.exists(pfad) and os.path.getsize(pfad) > LOG_MAX_BYTES:
+            os.replace(pfad, pfad + '.1')
+        with open(pfad, 'a', encoding='utf-8') as f:
+            f.write(text)
     except Exception:
         pass
+
+
+def fehler_loggen(kontext):
+    """Schreibt Zeitstempel + Traceback nach kiosk_fehler.log, wirft nie selbst."""
+    log_anhaengen(FEHLER_LOG, f"\n[{datetime.datetime.now().isoformat(timespec='seconds')}] {kontext}\n"
+                              f"{traceback.format_exc()}")
 
 
 def ereignis_loggen(text):
-    try:
-        with open(EREIGNIS_LOG, 'a', encoding='utf-8') as f:
-            f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {text}\n")
-    except Exception:
-        pass
+    log_anhaengen(EREIGNIS_LOG, f"{datetime.datetime.now().isoformat(timespec='seconds')} {text}\n")
 
 FOTO_REFRESH_INTERVALL_MS = 60 * 60 * 1000
 ZAHNRAD_ANZEIGE_MS = 6000
