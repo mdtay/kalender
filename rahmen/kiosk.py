@@ -260,15 +260,15 @@ class App:
         # Fotos-verwalten-Zustand
         self.fotos_seite = 0
         self._fotos_verwalten_liste = []
-        self._fotos_verwalten_hat_weiter = False
         self._fotos_verwalten_gesamt = 0
         self.fv_filter_jahr = None
         self.fv_filter_monat = None
         self._fv_jahre_liste = []
         self._fv_rects = []
-        self._fv_zurueck_rect = None
-        self._fv_weiter_rect = None
         self._fv_einst_rect = None
+        self._fv_seiten_rects = []
+        self._fv_kachel_cache = {}
+        self._fv_anzahl_alle = 0
         self._fv_jahr_rect = None
         self._fv_monat_rect = None
 
@@ -894,13 +894,17 @@ class App:
 
     # ── Fotos verwalten ──────────────────────────────────────────────
 
-    FV_SPALTEN = 4
-    FV_REIHEN = 2
-    FV_RAND = 20
+    FV_SPALTEN = 7
+    FV_REIHEN = 3
+    FV_RAND = 12
+    FV_KOPF_HOEHE = 116
+    FV_FUSS_HOEHE = 74
+    FV_KACHEL_RADIUS = 12
+    FV_KACHEL_BUDGET_MS = 35
 
     def _fv_verfuegbare_jahre(self):
         rows = self.conn.execute(
-            "SELECT DISTINCT substr(datum,1,4) as jahr FROM fotos ORDER BY jahr DESC"
+            "SELECT DISTINCT substr(datum,1,4) as jahr FROM fotos WHERE ist_video=0 ORDER BY jahr DESC"
         ).fetchall()
         return [r['jahr'] for r in rows]
 
@@ -918,13 +922,22 @@ class App:
         pro_seite = self.FV_SPALTEN * self.FV_REIHEN
         where, parameter = self._fv_where_klausel()
         gesamt = self.conn.execute(f"SELECT COUNT(*) as c FROM fotos {where}", parameter).fetchone()['c']
+        self.fotos_seite = max(0, min(self.fotos_seite, math.ceil(gesamt / pro_seite) - 1))
         zeilen = self.conn.execute(
-            f"SELECT * FROM fotos {where} ORDER BY datum DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM fotos {where} ORDER BY datum DESC, id DESC LIMIT ? OFFSET ?",
             parameter + [pro_seite, self.fotos_seite * pro_seite]
         ).fetchall()
         self._fotos_verwalten_liste = [dict(r) for r in zeilen]
         self._fotos_verwalten_gesamt = gesamt
-        self._fotos_verwalten_hat_weiter = (self.fotos_seite + 1) * pro_seite < gesamt
+        self._fv_anzahl_alle = self.conn.execute(
+            "SELECT COUNT(*) as c FROM fotos WHERE ist_video=0"
+        ).fetchone()['c']
+        # Fertige Kacheln nur fuer die aktuelle Seite behalten - begrenzt den
+        # RAM auf dem Pi 3, und Seitenwechsel bauen ohnehin neu.
+        self._fv_kachel_cache = {}
+
+    def _fv_seiten_gesamt(self):
+        return max(1, math.ceil(self._fotos_verwalten_gesamt / (self.FV_SPALTEN * self.FV_REIHEN)))
 
     def _fv_jahr_zyklus(self, richtung):
         optionen = [None] + self._fv_jahre_liste
@@ -947,6 +960,9 @@ class App:
             try:
                 from PIL import Image
                 bild = Image.open(os.path.join(FOTOS_DIR, dateiname))
+                # JPEG direkt in reduzierter Aufloesung dekodieren - um ein
+                # Vielfaches schneller als das volle 12-MP-Bild auf dem Pi 3.
+                bild.draft('RGB', (320, 320))
                 bild.thumbnail((320, 320))
                 bild.convert('RGB').save(thumb_pfad, 'JPEG', quality=85)
             except Exception:
@@ -956,20 +972,66 @@ class App:
         except Exception:
             return None
 
-    FV_KOPF_HOEHE = 132
-    FV_FUSS_HOEHE = 86
-    FV_BESCHRIFTUNG_H = 22
-
     def _fv_zellen_geometrie(self):
         spalten, reihen, rand = self.FV_SPALTEN, self.FV_REIHEN, self.FV_RAND
-        beschriftung_h = self.FV_BESCHRIFTUNG_H
         verfuegbare_breite = self.w - rand * (spalten + 1)
-        verfuegbare_hoehe = (self.h - self.FV_KOPF_HOEHE - self.FV_FUSS_HOEHE
-                              - rand * (reihen - 1) - reihen * beschriftung_h)
+        verfuegbare_hoehe = self.h - self.FV_KOPF_HOEHE - self.FV_FUSS_HOEHE - rand * (reihen - 1)
         zelle = min(verfuegbare_breite // spalten, verfuegbare_hoehe // reihen)
         raster_breite = spalten * zelle + (spalten - 1) * rand
         start_x = (self.w - raster_breite) // 2
         return zelle, rand, start_x
+
+    def _fv_kachel(self, foto, groesse):
+        """Quadratische Kachel: Foto fuellt sie komplett (mittig zugeschnitten),
+        runde Ecken, Datum als Band unten. Pro Seite einmal gebaut."""
+        schluessel = (foto['lokaler_dateiname'], groesse)
+        if schluessel in self._fv_kachel_cache:
+            return self._fv_kachel_cache[schluessel]
+
+        kachel = pygame.Surface((groesse, groesse), pygame.SRCALPHA)
+        kachel.fill(FARBE_KARTE_RAND)
+        thumb = self.thumbnail_laden(foto['lokaler_dateiname'])
+        if thumb:
+            tw, th = thumb.get_size()
+            skala = max(groesse / tw, groesse / th)
+            ziel = (max(groesse, math.ceil(tw * skala)), max(groesse, math.ceil(th * skala)))
+            skaliert = pygame.transform.smoothscale(thumb, ziel)
+            kachel.blit(skaliert, ((groesse - ziel[0]) // 2, (groesse - ziel[1]) // 2))
+
+        datum_text = datum_de_formatieren(foto.get('datum'))
+        if datum_text:
+            band_h = 24
+            band = pygame.Surface((groesse, band_h), pygame.SRCALPHA)
+            band.fill((0, 0, 0, 120))
+            kachel.blit(band, (0, groesse - band_h))
+            t_surf = self.font_klein.render(datum_text, True, (255, 255, 255))
+            kachel.blit(t_surf, t_surf.get_rect(center=(groesse // 2, groesse - band_h // 2)))
+
+        maske = pygame.Surface((groesse, groesse), pygame.SRCALPHA)
+        pygame.draw.rect(maske, (255, 255, 255, 255), maske.get_rect(), border_radius=self.FV_KACHEL_RADIUS)
+        kachel.blit(maske, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+
+        self._fv_kachel_cache[schluessel] = kachel
+        return kachel
+
+    @staticmethod
+    def _seiten_slots(aktuell, gesamt):
+        """Seitennummern (0-basiert) fuer die Leiste, None = Auslassung '…'.
+        Immer erste/letzte Seite plus Nachbarn der aktuellen, max. 7 Felder."""
+        if gesamt <= 7:
+            return list(range(gesamt))
+        if aktuell <= 3:
+            seiten = list(range(0, 5)) + [gesamt - 1]
+        elif aktuell >= gesamt - 4:
+            seiten = [0] + list(range(gesamt - 5, gesamt))
+        else:
+            seiten = [0, aktuell - 1, aktuell, aktuell + 1, gesamt - 1]
+        slots = []
+        for seite in seiten:
+            if slots and seite - slots[-1] > 1:
+                slots.append(None)
+            slots.append(seite)
+        return slots
 
     def _fv_cycler_zeichnen(self, rect, text):
         self._karte(rect)
@@ -979,16 +1041,59 @@ class App:
         t_surf = self.font_klein.render(text, True, FARBE_TEXT_DUNKEL)
         self.screen.blit(t_surf, t_surf.get_rect(center=rect.center))
 
+    def _fv_pagination_zeichnen(self, bereich):
+        gesamt = self._fv_seiten_gesamt()
+        aktuell = self.fotos_seite
+        groesse, gap = bereich.height, 8
+        felder = [('pfeil', aktuell - 1, '‹', aktuell > 0)]
+        for slot in self._seiten_slots(aktuell, gesamt):
+            if slot is None:
+                felder.append(('luecke', None, '…', False))
+            else:
+                felder.append(('seite', slot, str(slot + 1), True))
+        felder.append(('pfeil', aktuell + 1, '›', aktuell < gesamt - 1))
+
+        breiten = [max(groesse, self.font_mittel.size(text)[0] + 28) if art == 'seite' else
+                   (groesse if art == 'pfeil' else 28) for art, _, text, _ in felder]
+        x = bereich.centerx - (sum(breiten) + gap * (len(felder) - 1)) // 2
+        self._fv_seiten_rects = []
+        for (art, ziel, text, aktiv), breite in zip(felder, breiten):
+            rect = pygame.Rect(x, bereich.y, breite, groesse)
+            x += breite + gap
+            if art == 'luecke':
+                t_surf = self.font_mittel.render(text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+                self.screen.blit(t_surf, t_surf.get_rect(center=rect.center))
+                continue
+            if art == 'seite' and ziel == aktuell:
+                self._zeile_button(rect, text, akzent=True)
+                continue
+            if art == 'pfeil' and not aktiv:
+                pygame.draw.rect(self.screen, FARBE_SEITE, rect, border_radius=16)
+                pygame.draw.rect(self.screen, FARBE_KARTE_RAND, rect, width=2, border_radius=16)
+                t_surf = self.font_mittel.render(text, True, FARBE_KARTE_RAND)
+                self.screen.blit(t_surf, t_surf.get_rect(center=rect.center))
+                continue
+            self._zeile_button(rect, text)
+            self._fv_seiten_rects.append((rect, ziel))
+
     def fotos_verwalten_zeichnen(self):
         self.screen.fill(FARBE_SEITE)
         titel = self.font_gross.render(self.t('fotos_verwalten_titel'), True, FARBE_TEXT_DUNKEL)
-        self.screen.blit(titel, (28, 20))
+        self.screen.blit(titel, (28, 12))
+
+        if self.fv_filter_jahr or self.fv_filter_monat:
+            anzahl_text = self.t('fotos_anzahl_gefiltert').format(
+                n=self._fotos_verwalten_gesamt, gesamt=self._fv_anzahl_alle)
+        else:
+            anzahl_text = self.t('fotos_anzahl').format(n=self._fv_anzahl_alle)
+        anzahl = self.font_mittel.render(anzahl_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+        self.screen.blit(anzahl, anzahl.get_rect(midright=(self.w - 28, 12 + titel.get_height() // 2)))
 
         # Filterleiste: Jahr + Monat
-        filter_y = 70
-        breite_halb = (self.w - 56) // 2
-        self._fv_jahr_rect = pygame.Rect(28, filter_y, breite_halb, 48)
-        self._fv_monat_rect = pygame.Rect(28 + breite_halb + 8, filter_y, breite_halb, 48)
+        filter_y = 58
+        breite_halb = (self.w - 56 - 8) // 2
+        self._fv_jahr_rect = pygame.Rect(28, filter_y, breite_halb, 44)
+        self._fv_monat_rect = pygame.Rect(28 + breite_halb + 8, filter_y, breite_halb, 44)
         jahr_text = self.fv_filter_jahr or self.t('alle_jahre')
         monat_text = MONATSNAMEN.get(self.sprache, MONATSNAMEN['de'])[self.fv_filter_monat - 1] \
             if self.fv_filter_monat else self.t('alle_monate')
@@ -999,56 +1104,37 @@ class App:
         self._fv_rects = []
 
         if not self._fotos_verwalten_liste:
-            hinweis = self.font_klein.render(self.t('keine_fotos'), True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
+            schluessel = 'keine_fotos_filter' if (self.fv_filter_jahr or self.fv_filter_monat) else 'keine_fotos'
+            hinweis = self.font_klein.render(self.t(schluessel), True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
             self.screen.blit(hinweis, (28, self.FV_KOPF_HOEHE + 20))
 
+        # Kacheln schrittweise bauen: pro Frame nur so viele, wie ins Zeitbudget
+        # passen, der Rest erscheint in den naechsten Frames als Platzhalter.
+        bau_start = pygame.time.get_ticks()
         for i, foto in enumerate(self._fotos_verwalten_liste):
             col, row = i % self.FV_SPALTEN, i // self.FV_SPALTEN
             x = start_x + col * (zelle + rand)
-            y = self.FV_KOPF_HOEHE + row * (zelle + self.FV_BESCHRIFTUNG_H + rand)
+            y = self.FV_KOPF_HOEHE + row * (zelle + rand)
             rect = pygame.Rect(x, y, zelle, zelle)
             self._fv_rects.append((rect, foto))
+            fertig = (foto['lokaler_dateiname'], zelle) in self._fv_kachel_cache
+            if fertig or pygame.time.get_ticks() - bau_start < self.FV_KACHEL_BUDGET_MS:
+                self.screen.blit(self._fv_kachel(foto, zelle), rect)
+            else:
+                pygame.draw.rect(self.screen, FARBE_KARTE_RAND, rect, border_radius=self.FV_KACHEL_RADIUS)
 
-            thumb = self.thumbnail_laden(foto['lokaler_dateiname'])
-            pygame.draw.rect(self.screen, FARBE_KARTE, rect, border_radius=14)
-            pygame.draw.rect(self.screen, FARBE_KARTE_RAND, rect, width=2, border_radius=14)
-            if thumb:
-                innen = rect.inflate(-6, -6)
-                skala = min(innen.width / thumb.get_width(), innen.height / thumb.get_height())
-                groesse = (max(1, int(thumb.get_width() * skala)), max(1, int(thumb.get_height() * skala)))
-                thumb = pygame.transform.smoothscale(thumb, groesse)
-                thumb_rect = thumb.get_rect(center=rect.center)
-                # abgerundete Ecken der Kachel respektieren: leicht kleiner clippen
-                self.screen.set_clip(rect.inflate(-4, -4))
-                self.screen.blit(thumb, thumb_rect)
-                self.screen.set_clip(None)
-
-            stern_center = (rect.right - 24, rect.top + 24)
+            stern_center = (rect.right - 20, rect.top + 20)
             stern_farbe = (245, 158, 11) if foto['favorit'] else FARBE_KARTE_RAND
-            pygame.draw.circle(self.screen, (255, 255, 255), stern_center, 18)
-            pygame.draw.circle(self.screen, stern_farbe, stern_center, 18, width=0 if foto['favorit'] else 2)
-            self._stern_zeichnen(stern_center, 10, (255, 255, 255) if foto['favorit'] else (200, 200, 205))
+            pygame.draw.circle(self.screen, (255, 255, 255), stern_center, 15)
+            pygame.draw.circle(self.screen, stern_farbe, stern_center, 15, width=0 if foto['favorit'] else 2)
+            self._stern_zeichnen(stern_center, 8, (255, 255, 255) if foto['favorit'] else (200, 200, 205))
 
-            datum_text = datum_de_formatieren(foto.get('datum'))
-            if datum_text:
-                t_surf = self.font_klein.render(datum_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
-                self.screen.blit(t_surf, t_surf.get_rect(midtop=(rect.centerx, rect.bottom + 2)))
-
-        pro_seite = self.FV_SPALTEN * self.FV_REIHEN
-        gesamt_seiten = max(1, math.ceil(self._fotos_verwalten_gesamt / pro_seite))
-        seiten_text = f"{self.t('seite')} {self.fotos_seite + 1}/{gesamt_seiten}"
-        seiten_surf = self.font_klein.render(seiten_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT)
-        self.screen.blit(seiten_surf, seiten_surf.get_rect(centerx=self.w // 2, y=self.h - 108))
-
-        unten_y = self.h - 70
-        self._fv_zurueck_rect = pygame.Rect(20, unten_y, 150, 54)
-        self._fv_weiter_rect = pygame.Rect(self.w - 170, unten_y, 150, 54)
-        self._fv_einst_rect = pygame.Rect(self.w // 2 - 100, unten_y, 200, 54)
+        unten_y = self.h - 62
+        self._fv_einst_rect = pygame.Rect(28, unten_y, 200, 54)
         self._zeile_button(self._fv_einst_rect, self.t('zu_einstellungen'), akzent=True)
-        if self.fotos_seite > 0:
-            self._zeile_button(self._fv_zurueck_rect, self.t('zurueck'))
-        if self._fotos_verwalten_hat_weiter:
-            self._zeile_button(self._fv_weiter_rect, self.t('weiter'))
+        bereich = pygame.Rect(self._fv_einst_rect.right + 16, unten_y,
+                              self.w - 28 - (self._fv_einst_rect.right + 16), 54)
+        self._fv_pagination_zeichnen(bereich)
 
     def _stern_zeichnen(self, center, radius, farbe):
         punkte = []
@@ -1071,20 +1157,17 @@ class App:
             self._fv_monat_zyklus(richtung)
             return
         for rect, foto in self._fv_rects:
-            stern_rect = pygame.Rect(rect.right - 42, rect.top + 6, 36, 36)
+            stern_rect = pygame.Rect(rect.right - 44, rect.top, 44, 44)
             if stern_rect.collidepoint(pos):
                 self.conn.execute("UPDATE fotos SET favorit = 1 - favorit WHERE id=?", (foto['id'],))
                 self.conn.commit()
+                foto['favorit'] = 1 - foto['favorit']
+                return
+        for rect, seite in self._fv_seiten_rects:
+            if rect.collidepoint(pos):
+                self.fotos_seite = seite
                 self.fotos_verwalten_laden_seite()
                 return
-        if self._fv_zurueck_rect and self._fv_zurueck_rect.collidepoint(pos) and self.fotos_seite > 0:
-            self.fotos_seite -= 1
-            self.fotos_verwalten_laden_seite()
-            return
-        if self._fv_weiter_rect and self._fv_weiter_rect.collidepoint(pos) and self._fotos_verwalten_hat_weiter:
-            self.fotos_seite += 1
-            self.fotos_verwalten_laden_seite()
-            return
         if self._fv_einst_rect and self._fv_einst_rect.collidepoint(pos):
             self.state = 'SETTINGS'
             self._settings_zeilen = self.settings_zeilen_aufbauen()
