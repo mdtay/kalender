@@ -20,6 +20,7 @@ DB_PATH = os.path.join(RAHMEN_DIR, 'rahmen.db')
 MANIFEST_PATH = os.path.join(RAHMEN_DIR, 'manifest_latest.db')
 FORTSCHRITT_PATH = os.path.join(RAHMEN_DIR, 'sync_progress.json')
 THUMBS_DIR = os.path.join(RAHMEN_DIR, 'thumbnails')
+SPERR_PATH = os.path.join(RAHMEN_DIR, 'sync.lock')
 
 # Auf der echten Hardware anzupassen, sobald der USB-Stick gemountet ist
 # (siehe deploy/README.md) - siehe Plan §6.
@@ -114,15 +115,19 @@ def einstellung(conn, schluessel, default):
 
 
 def kandidaten_berechnen(manifest, erlaubte_ids):
-    """Liefert {bild_id: (dateiname, datum, ist_video)} fuer alle Fotos, die
-    laut Personenfilter geladen werden duerfen. Videos nie - der Rahmen ist
-    ein reiner Bilder-Slider (der Pi 3 kommt mit HEVC-Videos nicht klar)."""
+    """Liefert {bild_id: (dateiname, datum, ist_video, geaendert)} fuer alle
+    Fotos, die laut Personenfilter geladen werden duerfen. Videos nie - der
+    Rahmen ist ein reiner Bilder-Slider (der Pi 3 kommt mit HEVC-Videos nicht
+    klar). geaendert = Aenderungszeit der Datei auf dem Haupt-Pi oder None."""
     tags_pro_bild = {}
     for row in manifest.execute("SELECT bild_id, person_id FROM bild_personen").fetchall():
         tags_pro_bild.setdefault(row['bild_id'], set()).add(row['person_id'])
 
+    spalten = {r[1] for r in manifest.execute("PRAGMA table_info(bilder)")}
+    geaendert_spalte = 'geaendert' if 'geaendert' in spalten else 'NULL AS geaendert'  # aelteres Manifest
+
     kandidaten = {}
-    for b in manifest.execute("SELECT id, dateiname, datum, ist_video FROM bilder").fetchall():
+    for b in manifest.execute(f"SELECT id, dateiname, datum, ist_video, {geaendert_spalte} FROM bilder").fetchall():
         personen = tags_pro_bild.get(b['id'])
         if not personen:
             continue  # keine Person getaggt -> nicht anzeigen (Datenschutz-Entscheidung)
@@ -130,7 +135,7 @@ def kandidaten_berechnen(manifest, erlaubte_ids):
             continue  # mindestens eine nicht erlaubte Person auf dem Foto
         if b['ist_video']:
             continue
-        kandidaten[b['id']] = (b['dateiname'], b['datum'], b['ist_video'])
+        kandidaten[b['id']] = (b['dateiname'], b['datum'], b['ist_video'], b['geaendert'])
     return kandidaten
 
 
@@ -144,9 +149,36 @@ def fotos_abgleichen(conn, kandidaten):
         bild_id for bild_id in set(vorhandene) & set(kandidaten)
         if not os.path.exists(os.path.join(FOTOS_DIR, vorhandene[bild_id]['lokaler_dateiname']))
     }
-    neu_ids = (set(kandidaten) - set(vorhandene)) | dateien_fehlen
+    # Auf dem Haupt-Pi geaenderte Dateien (z.B. gedreht) neu holen. rsync -a
+    # uebernimmt die Aenderungszeit, eine Abweichung heisst also: neue Version.
+    datei_geaendert = set()
+    for bild_id in set(vorhandene) & set(kandidaten) - dateien_fehlen:
+        quelle_zeit = kandidaten[bild_id][3]
+        if quelle_zeit is None:
+            continue
+        name = vorhandene[bild_id]['lokaler_dateiname']
+        if int(os.path.getmtime(os.path.join(FOTOS_DIR, name))) != quelle_zeit:
+            datei_geaendert.add(bild_id)
+            vorschau = os.path.join(THUMBS_DIR, name)
+            if os.path.exists(vorschau):
+                os.remove(vorschau)  # wird nach dem Holen neu erzeugt
+    neu_ids = (set(kandidaten) - set(vorhandene)) | dateien_fehlen | datei_geaendert
     entfernen_ids = set(vorhandene) - set(kandidaten)
     return neu_ids, entfernen_ids, vorhandene
+
+
+def daten_aktualisieren(conn, kandidaten, vorhandene):
+    """Uebernimmt geaenderte Daten (z.B. Ereignisdatum im Kalender verschoben)
+    fuer bereits vorhandene Fotos - sonst stimmen Datumsanzeige und
+    chronologische Reihenfolge auf dem Rahmen nicht mehr."""
+    geaendert = 0
+    for bild_id in set(vorhandene) & set(kandidaten):
+        neues_datum = kandidaten[bild_id][1]
+        if vorhandene[bild_id]['datum'] != neues_datum:
+            conn.execute("UPDATE fotos SET datum=? WHERE quelle_bild_id=?", (neues_datum, bild_id))
+            geaendert += 1
+    conn.commit()
+    return geaendert
 
 
 def alte_fotos_entfernen(conn, entfernen_ids, vorhandene):
@@ -196,7 +228,7 @@ def neue_fotos_holen(conn, neu_ids, kandidaten):
 
     geholt = 0
     for bild_id in neu_ids:
-        dateiname, datum, ist_video = kandidaten[bild_id]
+        dateiname, datum, ist_video, _ = kandidaten[bild_id]
         if not os.path.exists(os.path.join(FOTOS_DIR, dateiname)):
             continue  # rsync konnte die Datei nicht holen (z.B. zwischenzeitlich geloescht)
         # Upsert, weil auch bekannte Fotos mit fehlender Datei hier landen -
@@ -290,6 +322,7 @@ def hauptlauf():
 
         neu_ids, entfernen_ids, vorhandene = fotos_abgleichen(conn, kandidaten)
         alte_fotos_entfernen(conn, entfernen_ids, vorhandene)
+        daten_geaendert = daten_aktualisieren(conn, kandidaten, vorhandene)
         geholt = neue_fotos_holen(conn, neu_ids, kandidaten)
         entfernt_wegen_quota = speicher_aufraeumen(conn)
         vorschaubilder = vorschaubilder_aktualisieren(conn)
@@ -300,7 +333,8 @@ def hauptlauf():
         conn.commit()
         conn.close()
         print(
-            f"Sync fertig: {geholt} neu geholt, {len(entfernen_ids)} nicht mehr erlaubt entfernt, "
+            f"Sync fertig: {geholt} neu geholt, {daten_geaendert} Daten aktualisiert, "
+            f"{len(entfernen_ids)} nicht mehr erlaubt entfernt, "
             f"{entfernt_wegen_quota} wegen Speicherplatz entfernt, {vorschaubilder} Vorschaubilder erzeugt."
         )
         fortschritt = _fortschritt_lesen_intern()
@@ -319,5 +353,23 @@ def _fortschritt_lesen_intern():
         return {}
 
 
+def mit_sperre_ausfuehren():
+    """Nachtlauf (Timer) und Knopf in den Einstellungen koennen gleichzeitig
+    starten - zwei Laeufe wuerden sich bei Manifest und Datenbank in die Quere
+    kommen. Der zweite beendet sich deshalb sofort."""
+    try:
+        import fcntl
+    except ImportError:  # Windows-Testlauf
+        hauptlauf()
+        return
+    with open(SPERR_PATH, 'w') as sperre:
+        try:
+            fcntl.flock(sperre, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("Sync laeuft bereits - dieser Lauf wird uebersprungen.")
+            return
+        hauptlauf()
+
+
 if __name__ == '__main__':
-    hauptlauf()
+    mit_sperre_ausfuehren()

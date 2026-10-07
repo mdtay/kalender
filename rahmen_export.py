@@ -10,6 +10,7 @@ import os
 import sqlite3
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'kalender.db')
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
 EXPORT_DIR = os.path.join(os.path.dirname(__file__), 'rahmen_export')
 MANIFEST_PATH = os.path.join(EXPORT_DIR, 'manifest.db')
 MANIFEST_TMP_PATH = MANIFEST_PATH + '.tmp'
@@ -19,6 +20,15 @@ VIDEO_EXTENSIONS = {'mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v'}
 
 def ist_video(dateiname):
     return '.' in dateiname and dateiname.rsplit('.', 1)[1].lower() in VIDEO_EXTENSIONS
+
+
+def datei_geaendert(dateiname):
+    """Aenderungszeit der Fotodatei (ganze Sekunden). Der Rahmen vergleicht sie
+    mit seiner Kopie, um z.B. gedrehte Fotos neu zu holen."""
+    try:
+        return int(os.path.getmtime(os.path.join(UPLOAD_FOLDER, dateiname)))
+    except OSError:
+        return None
 
 
 def hauptlauf():
@@ -35,7 +45,8 @@ def hauptlauf():
             id INTEGER PRIMARY KEY,
             dateiname TEXT NOT NULL,
             datum TEXT NOT NULL,
-            ist_video INTEGER NOT NULL
+            ist_video INTEGER NOT NULL,
+            geaendert INTEGER
         );
         CREATE TABLE bild_personen (
             bild_id INTEGER NOT NULL,
@@ -49,8 +60,9 @@ def hauptlauf():
 
     bilder = quelle.execute("SELECT id, dateiname, datum FROM bilder").fetchall()
     ziel.executemany(
-        "INSERT INTO bilder (id, dateiname, datum, ist_video) VALUES (?, ?, ?, ?)",
-        [(b['id'], b['dateiname'], b['datum'], 1 if ist_video(b['dateiname']) else 0) for b in bilder]
+        "INSERT INTO bilder (id, dateiname, datum, ist_video, geaendert) VALUES (?, ?, ?, ?, ?)",
+        [(b['id'], b['dateiname'], b['datum'], 1 if ist_video(b['dateiname']) else 0,
+          datei_geaendert(b['dateiname'])) for b in bilder]
     )
 
     bild_personen = quelle.execute("SELECT bild_id, person_id FROM bild_personen").fetchall()
