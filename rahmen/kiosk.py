@@ -647,7 +647,10 @@ class App:
                               f"{bytes_human(usage.used)} / {bytes_human(usage.total)} ({prozent}%)")
         except FileNotFoundError:
             speicher_text = f"{self.t('speicher_belegt')}: -"
-        letzter = self.conn.execute("SELECT MAX(synced_at) as t FROM fotos").fetchone()['t']
+        zeile = self.conn.execute(
+            "SELECT wert FROM einstellungen WHERE schluessel = 'letzter_sync_lauf'"
+        ).fetchone()
+        letzter = zeile['wert'] if zeile else None
         letzter_text = datum_de_formatieren(letzter) or self.t('noch_nie')
         sync_text = f"{self.t('letzter_sync')}: {letzter_text}"
         self.screen.blit(self.font_klein.render(speicher_text, True, FARBE_TEXT_DUNKEL_GEDAEMPFT), (rect.x, rect.y))

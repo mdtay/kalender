@@ -243,6 +243,10 @@ def hauptlauf():
         geholt = neue_fotos_holen(conn, neu_ids, kandidaten)
         entfernt_wegen_quota = speicher_aufraeumen(conn)
 
+        conn.execute(
+            "INSERT OR REPLACE INTO einstellungen VALUES ('letzter_sync_lauf', datetime('now'))"
+        )
+        conn.commit()
         conn.close()
         print(
             f"Sync fertig: {geholt} neu geholt, {len(entfernen_ids)} nicht mehr erlaubt entfernt, "
