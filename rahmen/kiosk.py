@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import traceback
+from collections import deque
 
 import pygame
 
@@ -157,8 +158,30 @@ def fotos_laden(conn):
         rows = conn.execute(
             "SELECT id, lokaler_dateiname, ist_video, favorit, datum FROM fotos WHERE ist_video=0"
         ).fetchall()
-    fotos = [dict(r) for r in rows]
+    return [dict(r) for r in rows]
+
+
+def reihenfolge_mischen(fotos, zuletzt_ids):
+    """Zufaellige Reihenfolge, aber kuerzlich gezeigte Fotos kommen ans Ende
+    (aelteste zuerst) und Fotos vom selben Tag stehen moeglichst nicht direkt
+    hintereinander."""
     random.shuffle(fotos)
+    position = {foto_id: n for n, foto_id in enumerate(zuletzt_ids)}
+    frisch = [f for f in fotos if f['id'] not in position]
+    kuerzlich = sorted((f for f in fotos if f['id'] in position), key=lambda f: position[f['id']])
+    return _tage_verteilen(frisch) + kuerzlich
+
+
+def _tage_verteilen(fotos, vorausschau=30):
+    # Begrenzte Vorausschau statt Komplettsuche: bleibt auch bei 10.000+
+    # Fotos auf dem Pi 3 schnell genug.
+    for i in range(1, len(fotos)):
+        if fotos[i]['datum'] != fotos[i - 1]['datum']:
+            continue
+        for j in range(i + 1, min(i + vorausschau, len(fotos))):
+            if fotos[j]['datum'] != fotos[i - 1]['datum']:
+                fotos[i], fotos[j] = fotos[j], fotos[i]
+                break
     return fotos
 
 
@@ -195,8 +218,10 @@ class App:
         self.running = True
 
         # Diashow-Zustand
-        self.fotos = fotos_laden(self.conn)
+        self.zuletzt_gezeigt = deque(maxlen=1000)
+        self.fotos = []
         self.foto_index = 0
+        self.fotos_neu_laden()
         self.aktuelle_surface = None
         self.naechste_surface = None
         self.in_uebergang = False
@@ -341,20 +366,30 @@ class App:
         except Exception:
             return None
 
+    def fotos_neu_laden(self):
+        self.fotos = fotos_laden(self.conn)
+        self.fotos_mischen()
+
+    def fotos_mischen(self):
+        # Nur die juengere Haelfte zaehlt als "kuerzlich", sonst landet bei
+        # wenigen Fotos alles im Kuerzlich-Block und das Mischen verpufft.
+        fenster = len(self.fotos) // 2
+        zuletzt = list(self.zuletzt_gezeigt)[-fenster:] if fenster else []
+        self.fotos = reihenfolge_mischen(self.fotos, zuletzt)
+        self.foto_index = 0
+
     def naechstes_foto_starten(self):
         if not self.fotos:
             self.aktuelle_surface = None
             return
-        # Nach jedem kompletten Durchlauf neu mischen, statt nur stuendlich -
-        # sonst wiederholt sich bei wenigen Fotos stur dieselbe Reihenfolge.
-        if self.foto_index > 0 and self.foto_index % len(self.fotos) == 0:
-            random.shuffle(self.fotos)
-
         versuche = 0
         while versuche < len(self.fotos):
             versuche += 1
-            foto = self.fotos[self.foto_index % len(self.fotos)]
+            if self.foto_index >= len(self.fotos):
+                self.fotos_mischen()
+            foto = self.fotos[self.foto_index]
             self.foto_index += 1
+            self.zuletzt_gezeigt.append(foto['id'])
             pfad = os.path.join(FOTOS_DIR, foto['lokaler_dateiname'])
             if foto['ist_video']:
                 self.video_abspielen(pfad)
@@ -467,7 +502,7 @@ class App:
         jetzt = pygame.time.get_ticks()
 
         if jetzt - self.letztes_foto_laden > FOTO_REFRESH_INTERVALL_MS:
-            self.fotos = fotos_laden(self.conn)
+            self.fotos_neu_laden()
             self.letztes_foto_laden = jetzt
 
         if self.aktuelle_surface is None and self.naechste_surface is None and not self.in_uebergang:
@@ -788,7 +823,7 @@ class App:
                         return
                     if r2.collidepoint(x, y_inhalt):
                         self.state = 'SLIDESHOW'
-                        self.fotos = fotos_laden(self.conn)
+                        self.fotos_neu_laden()
                         return
                     if r3.collidepoint(x, y_inhalt):
                         self.bildschirm_ausschalten()
