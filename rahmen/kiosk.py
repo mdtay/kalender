@@ -26,6 +26,8 @@ RAHMEN_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(RAHMEN_DIR, 'rahmen.db')
 THUMBS_DIR = os.path.join(RAHMEN_DIR, 'thumbnails')
 FEHLER_LOG = os.path.join(RAHMEN_DIR, 'kiosk_fehler.log')
+EREIGNIS_LOG = os.path.join(RAHMEN_DIR, 'kiosk_ereignisse.log')
+HAENGER_SCHWELLE_MS = 2000
 SYNC_FORTSCHRITT_PATH = os.path.join(RAHMEN_DIR, 'sync_progress.json')
 IST_LINUX = sys.platform.startswith('linux')
 FOTOS_DIR = os.environ.get(
@@ -40,6 +42,14 @@ def fehler_loggen(kontext):
         with open(FEHLER_LOG, 'a', encoding='utf-8') as f:
             f.write(f"\n[{datetime.datetime.now().isoformat(timespec='seconds')}] {kontext}\n")
             f.write(traceback.format_exc())
+    except Exception:
+        pass
+
+
+def ereignis_loggen(text):
+    try:
+        with open(EREIGNIS_LOG, 'a', encoding='utf-8') as f:
+            f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {text}\n")
     except Exception:
         pass
 
@@ -219,6 +229,8 @@ class App:
 
         # Diashow-Zustand
         self.zuletzt_gezeigt = deque(maxlen=1000)
+        self._aktuelle_datei = None
+        self._frame_start = 0
         self.fotos = []
         self.foto_index = 0
         self.fotos_neu_laden()
@@ -288,13 +300,21 @@ class App:
         return pygame.transform.smoothscale(img, groesse)
 
     def video_abspielen(self, pfad):
+        name = os.path.basename(pfad)
+        ereignis_loggen(f"VIDEO_START {name}")
+        start = pygame.time.get_ticks()
         try:
-            subprocess.run(
+            ergebnis = subprocess.run(
                 ['mpv', '--fullscreen', '--really-quiet', '--quiet', '--no-input-default-bindings', pfad],
                 check=False
             )
+            exit_code = ergebnis.returncode
         except FileNotFoundError:
-            pass  # mpv fehlt (z.B. lokaler Windows-Testlauf) - Video einfach ueberspringen
+            exit_code = 'mpv_fehlt'  # z.B. lokaler Windows-Testlauf - Video ueberspringen
+        dauer_s = (pygame.time.get_ticks() - start) / 1000
+        ereignis_loggen(f"VIDEO_ENDE {name} dauer={dauer_s:.1f}s exit={exit_code}")
+        # Die blockierende Videozeit darf nicht als Haenger der Hauptschleife zaehlen.
+        self._frame_start = pygame.time.get_ticks()
 
     def bildschirm_ausschalten(self):
         if IST_LINUX:
@@ -390,6 +410,7 @@ class App:
             foto = self.fotos[self.foto_index]
             self.foto_index += 1
             self.zuletzt_gezeigt.append(foto['id'])
+            self._aktuelle_datei = foto['lokaler_dateiname']
             pfad = os.path.join(FOTOS_DIR, foto['lokaler_dateiname'])
             if foto['ist_video']:
                 self.video_abspielen(pfad)
@@ -1089,7 +1110,13 @@ class App:
         fehler_zaehler = 0
         fehler_fenster_start = pygame.time.get_ticks()
 
+        ereignis_loggen("KIOSK_START")
+        letzter_state = None
         while self.running:
+            self._frame_start = pygame.time.get_ticks()
+            if self.state != letzter_state:
+                ereignis_loggen(f"STATE {letzter_state} -> {self.state}")
+                letzter_state = self.state
             try:
                 self.nachtplan_pruefen()
                 for ev in pygame.event.get():
@@ -1132,6 +1159,9 @@ class App:
                     fehler_loggen('Zu viele Fehler in kurzer Zeit - beende kiosk.py')
                     self.running = False
 
+            frame_ms = pygame.time.get_ticks() - self._frame_start
+            if frame_ms > HAENGER_SCHWELLE_MS:
+                ereignis_loggen(f"HAENGER {frame_ms}ms state={self.state} datei={self._aktuelle_datei}")
             self.clock.tick(FPS)
 
         self.conn.close()
