@@ -16,7 +16,6 @@ import sqlite3
 import subprocess
 import sys
 import threading
-import time
 import traceback
 from collections import deque
 
@@ -36,8 +35,6 @@ THUMBS_DIR = os.path.join(RAHMEN_DIR, 'thumbnails')
 FEHLER_LOG = os.path.join(RAHMEN_DIR, 'kiosk_fehler.log')
 EREIGNIS_LOG = os.path.join(RAHMEN_DIR, 'kiosk_ereignisse.log')
 HAENGER_SCHWELLE_MS = 2000
-HDMI_RESYNC_RUHE_MS = 30000
-HDMI_AUSGANG = 'HDMI-1'
 SYNC_FORTSCHRITT_PATH = os.path.join(RAHMEN_DIR, 'sync_progress.json')
 IST_LINUX = sys.platform.startswith('linux')
 FOTOS_DIR = os.environ.get(
@@ -262,8 +259,6 @@ class App:
         self._bildschirm_auto_aus = False
         self._letzter_nachtcheck = 0
         self._sync_prozess = None
-        self._letzter_tap = None
-        self._hdmi_resync_laeuft = False
 
         # Einstellungen-Zustand
         self._settings_zeilen = []
@@ -350,8 +345,6 @@ class App:
     def bildschirm_aus_event(self, ev):
         if ev.type == pygame.MOUSEBUTTONDOWN:
             self.bildschirm_einschalten()
-            self.hdmi_neu_synchronisieren()
-            self._letzter_tap = pygame.time.get_ticks()
 
     def bildschirm_aus_zeichnen(self):
         self.screen.fill(FARBE_HINTERGRUND)
@@ -598,29 +591,6 @@ class App:
         rect = self.zahnrad_rect()
         self._zahnrad_icon_zeichnen(rect.center, rect.width // 2 - 8, (235, 235, 235))
 
-    def hdmi_neu_synchronisieren(self):
-        """HDMI-Ausgang komplett ab- und neu aufbauen - wirkt wie Stecker
-        ziehen. Noetig, weil das Display gelegentlich schwarz bleibt, obwohl
-        der Pi weiter sendet (und das nicht erkennen kann). Nur DPMS aus/an
-        reichte am echten Display nicht, xrandr off/mode schon."""
-        if not IST_LINUX or self._hdmi_resync_laeuft:
-            return
-        self._hdmi_resync_laeuft = True
-
-        def arbeit():
-            try:
-                subprocess.run(['xrandr', '--output', HDMI_AUSGANG, '--off'], check=False, timeout=10)
-                time.sleep(3)
-                subprocess.run(['xrandr', '--output', HDMI_AUSGANG, '--auto',
-                                '--pos', '0x0', '--primary'], check=False, timeout=10)
-                ereignis_loggen("HDMI_RESYNC")
-            except Exception:
-                fehler_loggen('HDMI-Neusynchronisierung')
-            finally:
-                self._hdmi_resync_laeuft = False
-
-        threading.Thread(target=arbeit, daemon=True).start()
-
     def slideshow_event(self, ev):
         if ev.type != pygame.MOUSEBUTTONDOWN:
             return
@@ -630,12 +600,6 @@ class App:
             self.settings_scroll = 0
             self._settings_zeilen = self.settings_zeilen_aufbauen()
             return
-        # Erster Tap nach einer Ruhepause stellt das Signal neu her - bei
-        # schwarzem Display reicht so einmal antippen. Folgetaps (z.B. aufs
-        # Zahnrad) loesen kein weiteres Flackern aus.
-        if self._letzter_tap is None or jetzt - self._letzter_tap > HDMI_RESYNC_RUHE_MS:
-            self.hdmi_neu_synchronisieren()
-        self._letzter_tap = jetzt
         self.zahnrad_bis = jetzt + ZAHNRAD_ANZEIGE_MS
 
     # ── Einstellungen ────────────────────────────────────────────────
